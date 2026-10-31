@@ -4,9 +4,6 @@ local LUA_PATH = "Matcha_Animation_Changer.lua"
 local CACHE_PATH = "SpooferConfig/Stance_Script_Cache.lua"
 local MIN_PACKS = 1052
 
-local function notice(message)
-    print("[Stance] " .. message)
-end
 local function warning(message)
     warn("[Stance] " .. message)
 end
@@ -90,7 +87,6 @@ if remoteCount and (not existingCount or remoteCount >= existingCount) then
     local ok, err = pcall(writefile, JSON_PATH, remoteJSON)
     if ok then
         loadedCount = remoteCount
-        notice("Updated local animation library from the repository (" .. remoteCount .. " packs).")
     else
         warning("Cannot write the new library: " .. tostring(err))
     end
@@ -103,7 +99,6 @@ end
 if not loadedCount then
     if existingCount then
         loadedCount = existingCount
-        notice("Using locally cached library (" .. existingCount .. " packs).")
     else
         warning("No valid local library is available. Stance was not started; your files were not overwritten.")
         return
@@ -118,7 +113,6 @@ if validScript(remoteScript) then
     end
 end
 
-notice("Starting Stance with " .. loadedCount .. " packs. New library updates apply the next time you launch it.")
 
 
 local ok, entry = pcall(loadstring, script, "Stance")
