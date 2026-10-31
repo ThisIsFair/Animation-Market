@@ -1,28 +1,5 @@
- 
+local STANCE_RELEASE = "20261030-pagination-r2"
 
-
-
-
-
-
-
-
- 
- 
- 
- 
- 
- 
- 
-
- 
- 
- 
- 
- 
- 
- 
- 
 local nativePairs = pairs
 local EMPTY_TABLE = {}
 local reportedMissingTables = {}
@@ -154,7 +131,7 @@ function MarketCore.binary(data)
         total = total+expanded
         assert(total <= MAX_BYTES*2 and expanded <= MAX_BYTES, "Expanded model too large")
         local payload = r:take(compressed > 0 and compressed or expanded)
-         
+
         if kind == "INST" or kind == "PROP" or kind == "PRNT" then
             if compressed > 0 then payload=MarketCore.lz4(payload,expanded) end
             local c = reader(payload)
@@ -244,7 +221,7 @@ function MarketCore.rows(data, assetType)
         local id = node.class == "Animation" and MarketCore.contentId(node.animationId) or nil
         if id then
             local folder, parent, depth, excluded = MarketCore.state(node.name), node.parent, 0, false
-             
+
             while nodes[parent] and depth < 32 do
                 if nodes[parent].name:lower()=="pose" then excluded=true; break end
                 local state = MarketCore.state(nodes[parent].name)
@@ -269,9 +246,6 @@ function MarketCore.rows(data, assetType)
     return rows
 end
 
- 
- 
- 
 local CATALOG_ANIMATION_TYPES = {
     climbanimation=48, fallanimation=50, idleanimation=51,
     jumpanimation=52, runanimation=53, swimanimation=54,
@@ -287,8 +261,6 @@ function MarketCore.catalogAnimationType(value)
     return nil
 end
 
- 
- 
 local function marketEligibleCandidate(item)
     if type(item)~="table" then return false end
     local name=tostring(item.name or ""):lower()
@@ -333,14 +305,13 @@ function MarketCore.group(rows)
             table.insert(grouped[row[1]],tonumber(row[3]))
         end
     end
-     
+
     if grouped.idle and #grouped.idle == 1 then grouped.idle[2]=grouped.idle[1] end
     return grouped
 end
 
 function MarketCore.catalogUrl(cursor, apiVersion)
-     
-     
+
     local url
     if apiVersion == 2 then
         url = "https://catalog.roblox.com/v2/search/items/details?model.bundleTypeIds=2&model.sortType=3&limit=30"
@@ -352,19 +323,12 @@ function MarketCore.catalogUrl(cursor, apiVersion)
     return url
 end
 
-
- 
- 
- 
 local HttpService = game:GetService("HttpService")
 
 local SUB_MENU_MAX_ROWS = 22       
 local SUB_MENU_COL_WIDTH = 175     
 local TOGGLE_KEYCODE = 115         
 
- 
- 
- 
 local PINNED_OFFSETS = {
     ["version-5a21b87bbc2641cf"]={PlatformStand=0x1D2,AnimationId=0xA8},
 }
@@ -385,13 +349,6 @@ else
         "; memory writes disabled until offsets are verified for this build")
 end
 
- 
- 
- 
- 
- 
- 
- 
 local function read_std_string(addr)
     if type(addr)~="number" or addr<=0 then return nil end
     local size = memory_read("uintptr_t", addr + 0x10)
@@ -415,7 +372,7 @@ local function write_std_string(addr,value)
     local cap=memory_read("uintptr_t",addr+0x18)
     if type(oldSize)~="number" or type(cap)~="number" or
         oldSize<0 or oldSize>512 or cap<0 or cap>4096 or oldSize>cap or
-         
+
         #value>cap then return false end
     local ptr=(cap>=16) and memory_read("uintptr_t",addr) or addr
     if type(ptr)~="number" or ptr<=0 then return false end
@@ -425,11 +382,6 @@ local function write_std_string(addr,value)
     return read_std_string(addr)==value
 end
 
- 
- 
- 
- 
- 
 local rawPacks = {
 	["2014"] = {
 		{"idle", "Animation1", 79230074465081},
@@ -968,16 +920,13 @@ do
         for id,record in guardedPairs(data.packs, 'saved pack cache records') do
             if MarketCore.id(id) and type(record)=="table" and type(record.menuName)=="string"
                 and type(record.rows)=="table" and next(MarketCore.group(record.rows)) then
-                 
-                 
-                 
+
                 savedMarketPacks[tostring(id)]=record
             end
         end
     end
 end
 
- 
 do
     local ok, previous=pcall(function()
         if isfile(CONFIG_FILE) then return HttpService:JSONDecode(readfile(CONFIG_FILE)) end
@@ -995,9 +944,6 @@ do
     end
 end
 
- 
- 
- 
 local categoryConfig = {
     { name = "Idle",  folders = {"idle"} },
     { name = "Walk",  folders = {"walk"} },
@@ -1015,11 +961,11 @@ end
 
 for packName, animList in guardedPairs(rawPacks, 'initial category construction') do
     local catDataMap = {} 
-    
+
     for _, animData in ipairs(animList) do
         local folder = animData[1]
         local id = animData[3]
-        
+
         local catName = nil
         if folder == "idle" then catName = "Idle"
         elseif folder == "walk" then catName = "Walk"
@@ -1029,14 +975,14 @@ for packName, animList in guardedPairs(rawPacks, 'initial category construction'
         elseif folder == "climb" then catName = "Climb"
         elseif folder == "swim" or folder == "swimidle" then catName = "Swim"
         end
-        
+
         if catName then
             if not catDataMap[catName] then catDataMap[catName] = {} end
             if not catDataMap[catName][folder] then catDataMap[catName][folder] = {} end
             table.insert(catDataMap[catName][folder], id)
         end
     end
-    
+
     for catName, foldersMap in guardedPairs(catDataMap, 'category folders') do
         table.insert(categoryOptions[catName], { name = packName, foldersData = foldersMap })
     end
@@ -1048,9 +994,6 @@ for _, cat in ipairs(categoryConfig) do
     end)
 end
 
- 
- 
- 
 local activeSpoofs={}
 local activeWriteStamp={}
 local retryAfter={}
@@ -1074,7 +1017,7 @@ local function findAnimationChildren(folder)
     for _,child in ipairs(folder:GetChildren()) do
         if child:IsA("Animation") then result[#result+1]=child end
     end
-     
+
     table.sort(result,function(a,b) return tostring(a.Name)<tostring(b.Name) end)
     return result
 end
@@ -1105,21 +1048,19 @@ local function tryReferenceMemoryWrite(anim,id)
     local addr,existing=validateAnimationMemory(anim)
     if not addr then return false,existing end
     local target="http://www.roblox.com/asset/?id="..tostring(id)
-     
+
     if existing==target then return true,"already" end
     local ok,capacity=pcall(function() return memory_read("uintptr_t",addr+0x18) end)
     if not ok or type(capacity)~="number" or capacity<0 or capacity>4096 then
         return false,"Invalid C++ string capacity" end
     if #target>capacity then
-         
-         
-         
+
         if tryNativeWrite(anim,id) then return true,"native" end
         return false,"New AnimationId exceeds allocated capacity; unsafe buffer takeover disabled"
     end
     local wrote,succeeded=pcall(write_std_string,addr,target)
     if not wrote or not succeeded then
-         
+
         local recovered,current=pcall(read_std_string,addr)
         if not recovered or current~=existing then
             local restored,result=pcall(write_std_string,addr,existing)
@@ -1168,7 +1109,7 @@ local function applyActiveAnimations()
     local can,why=capability()
     if not can then logAnimationIssue("capability",tostring(why));return end
     applyBusy=true
-     
+
     local player=game:GetService("Players").LocalPlayer
     local character=player and player.Character
     local hum=character and character:FindFirstChild("Humanoid")
@@ -1193,8 +1134,7 @@ local function applyActiveAnimations()
                         if addr then
                             local expected="http://www.roblox.com/asset/?id="..idText
                             local key=folderName..":"..tostring(anim.Address)..":"..idText
-                             
-                             
+
                             if existing~=expected and not activeWriteStamp[key] and not retryAfter[key] then
                                 pending[#pending+1]={anim=anim,id=idText,key=key,state=folderName}
                             end
@@ -1214,8 +1154,7 @@ local function applyActiveAnimations()
         if originalPS~=0 and originalPS~=1 then
             assert(false,"PlatformStand value invalid; refusing pulse")
         end
-         
-         
+
         if originalPS==0 then
             memory_write("byte",hum.Address+PLATFORMSTAND_OFFSET,1)
             pulseStarted=true
@@ -1241,7 +1180,7 @@ local function applyActiveAnimations()
         end
         if pulseStarted then task.wait(0.08) end
     end)
-     
+
     if pulseStarted and originalPS~=nil then
         local restored,err=pcall(function()
             memory_write("byte",hum.Address+PLATFORMSTAND_OFFSET,originalPS)
@@ -1269,11 +1208,6 @@ task.spawn(function()
     end
 end)
 
- 
- 
- 
- 
- 
 local market, marketQueue
 local ugcIdsOnly=true
 local function ugcShort(value,n) return tostring(value or ""):sub(1,n or 100) end
@@ -1281,10 +1215,6 @@ local function updateContentLayout() end
 local function saveConfig() end  
 local dropdowns={}  
 
- 
- 
- 
- 
 local MARKET_TAB = "Animation Marketplace"
 local MARKET_CACHE = CONFIG_FOLDER .. "/MarketplaceCatalog.json"
 local MARKET_SETTINGS = CONFIG_FOLDER .. "/MarketplaceSettings.json"
@@ -1309,7 +1239,7 @@ local function marketWrite(path,value)
 end
 
 local function marketGet(url,headers)
-     
+
     assert(type(httpget)=="function","Matcha global httpget() is unavailable")
     local body=httpget(url,headers)
     assert(type(body)=="string" and #body>0,"Empty HTTP response for "..url:match("^https?://([^/]+)"))
@@ -1322,7 +1252,7 @@ local function marketJSON(url,headers)
     local ok,value=pcall(function() return HttpService:JSONDecode(raw) end)
     assert(ok and type(value)=="table","Expected a JSON API response")
     if value.errors then
-         
+
         local message=value.errors[1] and value.errors[1].message or "Request rejected"
         assert(false,"Roblox API: "..tostring(message):sub(1,180))
     end
@@ -1334,7 +1264,7 @@ if previousQA and previousQA.version==1 and type(previousQA.packs)=="table" then
     market.qa=previousQA.packs
 end
 local function marketMarkQA(pack,category,result)
-     
+
     if not pack or not pack.id or not category or (result~="works" and result~="fails") then return end
     local bundle=tostring(pack.id)
     market.qa[bundle]=market.qa[bundle] or {}
@@ -1352,7 +1282,7 @@ local function marketRemember(pack)
         for _,field in ipairs({"name","creator","creatorId","creatorType","price","items","rank"}) do
             if pack[field]~=nil then old[field]=pack[field] end
         end
-         
+
         if not old.rows and pack.rows then old.rows=pack.rows end
         if not old.menuName and pack.menuName then old.menuName=pack.menuName end
         if old.rows and old.status=="Unverified R15 candidate" then
@@ -1389,12 +1319,11 @@ local function marketRegister(pack,rows)
     savedMarketPacks[id]=record
     rawPacks[menuName]=rows
     pack.menuName=menuName
-     
+
     if changed then marketWrite(MARKET_RESOLVED_FILE,{version=1,packs=savedMarketPacks}) end
     return menuName
 end
 
- 
 local function marketAssetError(raw)
     if type(raw)~="string" then return nil end
     local ok, parsed = pcall(function() return HttpService:JSONDecode(raw) end)
@@ -1402,8 +1331,7 @@ local function marketAssetError(raw)
     local errors=parsed.errors or parsed.Errors
     if type(errors)=="table" and errors[1] then
         local message=tostring(errors[1].message or errors[1].Message or "Request rejected")
-         
-         
+
         local lower=message:lower()
         if lower:find("authentication required",1,true) or lower:find("unauthorized",1,true) then
             return "Authentication required (401): "..message:sub(1,125)
@@ -1424,7 +1352,7 @@ local function marketCDNLocation(json)
     assert(type(location)=="string", "Asset Delivery returned no asset location")
     local host=location:match("^https://([^/:?#]+)")
     assert(host and (host=="rbxcdn.com" or host:sub(-11)==".rbxcdn.com"), "Asset Delivery returned an unexpected download host")
-     
+
     return marketGet(location)
 end
 
@@ -1434,20 +1362,17 @@ local function marketFetchAsset(id)
     end)
     local hasKey=ok and type(key)=="string" and key~=""
     if hasKey then
-         
-         
+
         local data=marketJSON("https://apis.roblox.com/asset-delivery-api/v1/assetId/"..id,{["x-api-key"]=key})
         return marketCDNLocation(data)
     end
-     
+
     local body=marketGet("https://assetdelivery.roblox.com/v1/asset/?id="..id)
     if body:sub(1,8)=="<roblox!" or body:find("<roblox",1,true) then return body end
     local issue=marketAssetError(body)
-     
-     
-     
+
     if issue then assert(false,issue) end
-     
+
     local valid, json=pcall(function() return HttpService:JSONDecode(body) end)
     if valid and type(json)=="table" and (json.location or json.locations) then
         return marketCDNLocation(json)
@@ -1469,8 +1394,7 @@ end
 
 local function marketResolve(pack)
     if pack.rows and next(MarketCore.group(pack.rows)) then return true end
-     
-     
+
     local id=MarketCore.id(pack.id) or tostring(pack.key or ""):match("^bundle:(%d+)$")
     local stored=id and savedMarketPacks[id]
     if stored and type(stored.rows)=="table" and next(MarketCore.group(stored.rows)) then
@@ -1503,7 +1427,7 @@ local function marketApply(pack,category)
     end
     for _,folder in ipairs(requested or {"idle","walk","run","jump","fall","climb","swim","swimidle"}) do
         if grouped[folder] then
-             
+
             activeSpoofs[folder]=grouped[folder]
             changed=changed+1
         end
@@ -1512,7 +1436,7 @@ local function marketApply(pack,category)
         market.status="No mapped animation states for "..tostring(category or "bundle")
         return false
     end
-     
+
     activeWriteStamp={}
     market.lastApplied={bundleId=tostring(pack.id or ""),category=category}
     market.selected=pack
@@ -1520,9 +1444,6 @@ local function marketApply(pack,category)
     return true
 end
 
- 
- 
- 
 local function marketCycleIdleAlternative(pack,slot)
     if not pack or not slot or slot.state~="idle" or type(slot.ids)~="table" or #slot.ids<2 then return end
     local rec=savedMarketPacks[tostring(pack.id)]
@@ -1573,7 +1494,7 @@ local function marketScanPage()
         return marketJSON(MarketCore.catalogUrl(market.cursor,market.apiVersion))
     end)
     if (not ok or type(page)~="table" or type(page.data)~="table") and market.apiVersion==1 then
-         
+
         market.apiVersion=2
         page=marketJSON(MarketCore.catalogUrl(market.cursor,2))
         ok=true
@@ -1644,10 +1565,6 @@ local function marketFilter()
     market.dirty=false
 end
 
- 
- 
- 
- 
 local MARKET_BRIDGE_REVISION = CONFIG_FOLDER .. "/MarketplaceBridgeRevision.json"
 local MARKET_BRIDGE_FEED = CONFIG_FOLDER .. "/MarketplaceBridgeFeed.json"
 local marketBridgeLastRevision = nil
@@ -1696,9 +1613,6 @@ local function marketBridgePoll(force)
     end
 end
 
- 
- 
- 
 local savedCount=0
 for id,record in guardedPairs(savedMarketPacks,'saved BTR maps') do
     if type(record)=="table" and type(record.rows)=="table" and
@@ -1711,7 +1625,7 @@ for id,record in guardedPairs(savedMarketPacks,'saved BTR maps') do
         savedCount=savedCount+1
     end
 end
- 
+
 for name,rows in guardedPairs(rawPacks, 'marketplace initial pack registration') do
     local fromSaved=false
     for _,record in guardedPairs(savedMarketPacks, 'marketplace saved pack registration') do if record.menuName==name then fromSaved=true; break end end
@@ -1741,14 +1655,9 @@ if cached and type(cached.data)=="table" then
     end
     market.status="Curated on-sale R15 candidates loaded; playable IDs not guaranteed."
 end
- 
+
 updateContentLayout()
 
- 
- 
- 
- 
- 
 local function playbackCapability()
     return capability()
 end
@@ -1833,13 +1742,8 @@ _G.MatchaAnimationChangerPlayback = {
     end,
 }
 
-
- 
 local function startStanceUI()
- 
- 
- 
- 
+
 local UI_ROOT = "SpooferConfig/MarketplaceResolved.json"
 local UI_SETTINGS = "SpooferConfig/Stance_Settings.json"
 local UI_PRESETS = "SpooferConfig/MotionIndex_Presets.json"
@@ -1857,9 +1761,7 @@ if _G.MatchaMarketplaceUI and type(_G.MatchaMarketplaceUI.Stop)=="function" then
 end
 
 local function co(r,g,b) return Color3.fromRGB(r,g,b) end
- 
- 
-  
+
 local THEME_SETS={
   {name="Nocturne", main={18,22,24},sidebar={24,29,31},panel={30,36,38},panel2={39,47,48},border={65,76,77},active={42,59,57},accent={117,221,192},accent2={84,186,174},text={235,244,241},mute={169,184,180},dim={127,148,146},danger={249,153,143}},
   {name="Porcelain", main={242,239,230},sidebar={228,224,214},panel={251,249,244},panel2={232,229,222},border={192,188,177},active={219,233,224},accent={34,117,101},accent2={78,158,134},text={32,43,43},mute={84,100,96},dim={110,126,122},danger={180,68,63}},
@@ -1902,8 +1804,7 @@ local function saveDoc(path,value)
 end
 local prefs=getDoc(UI_SETTINGS) or getDoc("SpooferConfig/PrismMarket_Settings.json") or getDoc("SpooferConfig/MotionIndex_Settings.json") or getDoc("SpooferConfig/Kinetic_Settings.json") or {}
 themeIndex=math.max(1,math.min(#THEME_SETS,tonumber(prefs.theme) or 3))
- 
- 
+
 local velvetMigration=prefs.stanceThemeRevision~="velvet-default-1"
 if velvetMigration then themeIndex=3 end
 applyTheme()
@@ -1991,7 +1892,6 @@ local drag=nil
 local keysDown={}
 local render, draw, blur
 
- 
 local pool={}
 local used=0
 local hits={}
@@ -2062,7 +1962,7 @@ local function middle(s,x,y,w,h,size,color,strong)
     local font=strong and BOLD or FONT
     local fs=size or 13
     s=fit(s,w-8,fs,font)
-     
+
     local th=fs
     pcall(function()
         measure.Font=font;measure.Size=fs;measure.Text=s
@@ -2138,19 +2038,12 @@ local function caps()return repeatDown(0x14) end
 local function shift()return repeatDown(16) or repeatDown(160) or repeatDown(161) end
 local function ctrl()return repeatDown(17) or repeatDown(162) or repeatDown(163) end
 
- 
- 
- 
 local gameInputBlocked=false
- 
- 
- 
+
 local hoveringTextField=false
- 
- 
+
 local hoverArmed=true
- 
- 
+
 local releaseReassert=0
 local gateCalls=0
 local gateFailures=0
@@ -2192,8 +2085,7 @@ local function setGameInputEnabled(enabled)
     return ok or sunk
 end
 local function maintainInputGate(force)
-     
-     
+
     local shouldBlock=W.show and (edit~=nil or hoveringTextField)
     if shouldBlock then
         releaseReassert=0
@@ -2205,8 +2097,7 @@ local function maintainInputGate(force)
     return true
 end
 local function releaseGameInput()
-     
-     
+
     releaseReassert=5
     local ok=false
     for i=1,3 do
@@ -2218,8 +2109,7 @@ blur=function()
     local wasEditing=edit~=nil
     edit=nil
     searchSelectAll=false
-     
-     
+
     hoveringTextField=false
     hoverArmed=false
     for vk in pairs(keysDown) do keysDown[vk]=nil end
@@ -2228,13 +2118,12 @@ end
 local function focus(where)
     if not W.show then return end
     if edit==where then
-         
+
         releaseReassert=0
         setGameInputEnabled(false)
         return
     end
-     
-     
+
     edit=where
     searchSelectAll=false
     for vk in pairs(keysDown) do keysDown[vk]=nil end
@@ -2322,7 +2211,7 @@ local function pollKeys(now)
                 handleEdit(vk)
             elseif now>=(nextRepeat[vk] or math.huge) then
                 nextRepeat[vk]=now+0.052
-                 
+
                 if vk~=13 and vk~=27 then handleEdit(vk) end
             end
         else
@@ -2369,7 +2258,7 @@ local function onMix()
     mix[mixState]={packId=p.id,packName=p.name,ids=p.states[mixState]}
     status="Added "..mixState.." from "..p.name;drawFrame()
 end
- 
+
 local function blend(c1,c2,t)
     return co(math.floor((c1.R+(c2.R-c1.R)*t)*255+0.5),
               math.floor((c1.G+(c2.G-c1.G)*t)*255+0.5),
@@ -2404,13 +2293,13 @@ local MARGIN=22
 local function contentX() return SIDEBAR+MARGIN end
 local function contentW() return W.w-SIDEBAR-MARGIN*2 end
 local function nav()
-     
+
     box(-2,-2,W.w+4,W.h+4,C.shadow,15,0,false,0.27)
     box(0,0,W.w,W.h,C.main,12,1)
     box(0,0,SIDEBAR,W.h,C.sidebar,12,2)
     box(SIDEBAR-16,0,16,W.h,C.sidebar,0,2)
     box(SIDEBAR,0,1,W.h,C.border,0,4,false,0.72)
-     
+
     label("stance",16,17,24,C.light,true)
     local links={{"Library","Browse"},{"Favorites","Favorites"},{"Mix & Match","Mix & Match"},{"Presets","Presets"},{"Settings","Appearance"}}
     for i,item in ipairs(links) do
@@ -2434,8 +2323,7 @@ local function topLine(section, count)
         label(str,x+w-measureW(str,13,FONT),36,13,C.dim)
     end
 end
- 
- 
+
 local function drawSearch(x,y,w)
     local active=edit=="search"
     box(x,y,w,44,C.panel,8,5)
@@ -2552,7 +2440,7 @@ local function drawCatalogue(ismix)
     local results=listFiltered()
     local maxPage=math.max(1,math.ceil(#results/per))
     pageNo=math.min(pageNo,maxPage)
-     
+
     if selected then
        local visible=false
        for _,p in ipairs(results) do if p.id==selected then visible=true;break end end
@@ -2574,7 +2462,7 @@ end
 local function drawMixer()
     local x=contentX();local w=contentW()
     topLine("Mix & Match",countMix().." / 8 selected")
-     
+
     local gap=9;local cols=4;local cw=(w-3*gap)/cols
     for i,st in ipairs(UI_STATES) do
        local cc=(i-1)%cols;local rr=math.floor((i-1)/cols)
@@ -2649,13 +2537,13 @@ local function drawPresets()
         local asking=deleteConfirm==idx
         local rh=expanded and 232 or 48
         if yy+rh>bottom then break end
-         
+
         box(x,yy,w,rh,C.panel,6,3)
         box(x,yy,w,rh,expanded and C.accent or C.border,6,4,true,expanded and 0.70 or 0.35)
         local arrow=expanded and "v" or ">"
         middle(arrow,x+8,yy+9,24,29,15,C.accent,true)
         textFit(p.name,x+42,yy+13,w-252,14,C.light,true)
-         
+
         if asking then
             plainButton("Cancel",x+w-155,yy+8,65,31,function()deleteConfirm=nil;drawFrame()end)
             box(x+w-84,yy+8,80,31,C.danger,5,7)
@@ -2684,7 +2572,7 @@ local function drawPresets()
         hit(x+3,yy+2,w-164,43,function()
             if expandedPreset==expandIndex then expandedPreset=nil else expandedPreset=expandIndex end
             deleteConfirm=nil
-             
+
             if expandedPreset then pageNo=expandIndex end
             drawFrame()
         end)
@@ -2710,7 +2598,7 @@ local function drawPresets()
         yy=yy+rh+8
         idx=idx+1
     end
-     
+
     local footer=W.h-37
     local desc=tostring(pageNo).." - "..tostring(pageNo+shown-1).." of "..tostring(#presets)
     label(desc,x,footer+8,11,C.dim)
@@ -2740,7 +2628,6 @@ local function drawSettings()
        if themeIndex==i then label("Active",xx+102,yy+31,11,rgb(t.accent),true) end
        hit(xx,yy,cw,70,function()themeIndex=i;applyTheme();savePrefs();drawFrame()end)
     end
-     
 
 end
 render=function()
@@ -2764,22 +2651,18 @@ local function mouseDown(mx,my)
     for i=#hits,1,-1 do
         local item=hits[i]
         if contains(mx,my,item) then
-             
-             
-             
+
             if item.role=="search" or item.role=="preset" then
                 setGameInputEnabled(false)
             end
-             
-             
+
             if edit and item.role~=edit and item.role~="search" and item.role~="preset" then blur() end
             item.func()
             return
         end
     end
     if edit then blur();drawFrame() end
-     
-     
+
     if mx>=W.x and mx<W.x+W.w and my>=W.y and my<W.y+HEADER_DRAG_HEIGHT then
         drag={type="move",dx=mx-W.x,dy=my-W.y};return
     end
@@ -2790,9 +2673,7 @@ end
 local function updateMouse()
     local ok,mx,my=pcall(function() return UI_Mouse.X,UI_Mouse.Y end)
     if not ok then return end
-     
-     
-     
+
     local inField=false
     local insideUI=W.show and mx>=W.x and mx<W.x+W.w and my>=W.y and my<W.y+W.h
     if insideUI then
@@ -2805,8 +2686,7 @@ local function updateMouse()
         end
     end
     if not inField then hoverArmed=true end
-     
-     
+
     if edit and not insideUI then
         blur()
         drawFrame()
@@ -2817,7 +2697,7 @@ local function updateMouse()
         maintainInputGate(false)
     end
     local now=repeatDown(1)
-     
+
     local mo,md=pcall(ismouse1pressed)
     if mo then now=md==true end
     if now and not mouseWasDown then mouseDown(mx,my) end
@@ -2849,7 +2729,7 @@ end
 _G.MatchaMarketplaceUI={
     Stop=function()
         alive=false;blur();hoveringTextField=false
-         
+
         releaseGameInput()
         for _,p in ipairs(pool) do pcall(function()p.o:Remove()end) end
         pcall(function()measure:Remove()end)
@@ -2915,7 +2795,6 @@ end)
 end
 startStanceUI()
 
- 
 task.spawn(function()
     task.wait(0.1)
     while market.enabled do
