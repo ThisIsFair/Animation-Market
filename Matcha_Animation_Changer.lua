@@ -994,13 +994,6 @@ do
         end
     end
 end
-print("[MATCHA LIBRARY] Loaded "..tostring((function()
-    local n=0;for _ in guardedPairs(savedMarketPacks,"library total") do n=n+1 end;return n
-end)()).." saved bundle mappings; custom Drawing marketplace")
-
-local count = 0
-for _ in guardedPairs(rawPacks, 'initial raw pack count') do count = count + 1 end
-print("[Spoofer] Loaded animation packs:", count)
 
  
  
@@ -1348,7 +1341,6 @@ local function marketMarkQA(pack,category,result)
     market.qa[bundle][category]={result=result,source="manual",recordedAt=(os and os.time and os.time()) or 0}
     marketWrite(MARKET_PLAYBACK_QA,{version=1,packs=market.qa})
     market.status="Manual playback QA: "..pack.name.." / "..category.." = "..result
-    print("[MATCHA PLAYBACK QA] "..bundle.." "..category.." "..result.." (user-reported)")
 end
 
 local function marketRemember(pack)
@@ -1525,7 +1517,6 @@ local function marketApply(pack,category)
     market.lastApplied={bundleId=tostring(pack.id or ""),category=category}
     market.selected=pack
     market.status="Queued "..changed.." mapped states: "..pack.name.." (verify playback visually)"
-    print("[MATCHA SELECTION] "..market.status)
     return true
 end
 
@@ -1549,7 +1540,6 @@ local function marketCycleIdleAlternative(pack,slot)
             marketWrite(MARKET_RESOLVED_FILE,{version=1,packs=savedMarketPacks})
             marketApply(pack,"Idle")
             market.status="Switched Idle "..slot.name.." to ID "..tostring(nextId).." (playback unverified)"
-            print("[MATCHA LIBRARY] "..pack.name.." Idle/"..slot.name.." -> "..tostring(nextId))
             return
         end
     end
@@ -1627,7 +1617,6 @@ local function marketScanPage()
     end
     market.failures=0
     if tick()>=market.saveAt then marketSaveCatalog(); market.saveAt=tick()+15 end
-    print("[AnimationMarketplace] Catalog API v"..market.apiVersion..": "..added.." animation bundles this page; "..market.scanRank.." scanned")
     updateContentLayout()
 end
 
@@ -1704,7 +1693,6 @@ local function marketBridgePoll(force)
         market.lastError=""
         marketSaveCatalog()
         updateContentLayout()
-        print("[AnimationMarketplace] Dumper imported "..added.." ID-reference packs")
     end
 end
 
@@ -1723,7 +1711,6 @@ for id,record in guardedPairs(savedMarketPacks,'saved BTR maps') do
         savedCount=savedCount+1
     end
 end
-print("[BTR IMPORT] Registered "..savedCount.." saved packs in the custom Drawing marketplace")
  
 for name,rows in guardedPairs(rawPacks, 'marketplace initial pack registration') do
     local fromSaved=false
@@ -1807,7 +1794,6 @@ _G.MatchaAnimationChangerPlayback = {
                 count=count+1
             end
         end
-        print("[MATCHA LIBRARY] Refreshed "..count.." captured bundles from JSON")
         return true
     end,
     EquipBundle = function(bundleId,states,entry)
@@ -1842,7 +1828,6 @@ _G.MatchaAnimationChangerPlayback = {
         for state,ids in pairs(staged) do activeSpoofs[state]=ids end
         activeWriteStamp={}
         market.status="Queued Mix & Match: "..count.." state(s); playback unverified"
-        print("[MATCHA SELECTION] "..market.status)
         task.spawn(applyActiveAnimations)
         return true
     end,
@@ -1988,7 +1973,6 @@ loadPacks()
 
 local alive=true
 local page="Library"
-local filter="All"
 local search=""
 local queryCursor=0
 local searchSelectAll=false
@@ -2139,7 +2123,7 @@ local function listFiltered()
     for _,p in ipairs(packs) do
         if (page~="Favorites" or favorites[p.id]) and
            (page~="Mix & Match" or p.states[mixState]) and
-           (filter=="All" or (filter=="Full" and p.count>=7) or p.states[filter:lower()]) and
+           (page=="Mix & Match" or p.count>=7) and
            (q=="" or p.name:lower():find(q,1,true) or (p.creator~="UGC creator" and p.creator:lower():find(q,1,true))) then
             out[#out+1]=p
         end
@@ -2492,18 +2476,6 @@ local function drawSearch(x,y,w)
     end
     hit(x,y,w-(value~="" and 70 or 0),44,function()focus("search")end,"search")
 end
-local function filterStrip(y)
-    local x=contentX()
-    local filters={{"All","All"},{"Full","Full sets"},{"Idle","Idle"},{"Walk","Walk"},{"Run","Run"}}
-    for _,f in ipairs(filters) do
-        local width=(f[1]=="Full" and 95 or 70)
-        local active=filter==f[1]
-        if active then box(x,y+32,width,2,C.heroA,1,7) end
-        middle(f[2],x,y,width,30,13,active and C.light or C.mute,active)
-        hit(x,y,width,35,function()filter=f[1];selected=nil;pageNo=1;drawFrame()end)
-        x=x+width+11
-    end
-end
 local function pageControls(total,per,y)
     local cnt=math.max(1,math.ceil(total/per))
     pageNo=math.min(cnt,math.max(1,pageNo))
@@ -2568,8 +2540,8 @@ local function drawCatalogue(ismix)
     local x=contentX();local w=contentW()
     if page=="Favorites" then topLine("Favorites") else topLine("Animations",#packs) end
     drawSearch(x,83,w)
-    filterStrip(138)
-    local top=218
+    label("Full Set",x,149,14,C.accent,true)
+    local top=201
     local bottom=W.h-49
     local height=55  
     local pitch=height+3
@@ -2583,9 +2555,9 @@ local function drawCatalogue(ismix)
        for _,p in ipairs(results) do if p.id==selected then visible=true;break end end
        if not visible then selected=nil end
     end
-    fineRule(x,208,w,C.border,0.63)
-    label("ANIMATION",x+47,191,10,C.dim,true)
-    label("STATES",x+w-174,191,10,C.dim,true)
+    fineRule(x,191,w,C.border,0.63)
+    label("ANIMATION",x+47,174,10,C.dim,true)
+    label("STATES",x+w-174,174,10,C.dim,true)
     if #results==0 then emptyState(top,bottom-top)
     else
         for i=1,per do
@@ -2613,7 +2585,7 @@ local function drawMixer()
        local packName=mapped and (mapped.packName or "Selected") or "Not assigned"
        middle(packName,xx+5,yy+22,cw-10,17,11,mapped and C.mute or C.dim)
        hit(xx,yy,cw,44,function()
-           mixState=st;filter="All";selected=nil;search="";pageNo=1;blur();drawFrame()
+           mixState=st;selected=nil;search="";pageNo=1;blur();drawFrame()
        end)
     end
     drawSearch(x,186,w)
@@ -2936,7 +2908,6 @@ task.spawn(function()
         task.wait(0.017)
     end
 end)
-print("[Stance] Native Drawing marketplace loaded: "..#packs.." bundles. F4 to toggle.")
 
 end
 startStanceUI()
