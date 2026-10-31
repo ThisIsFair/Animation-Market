@@ -1,7 +1,8 @@
 local ROOT = "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/main/"
 local JSON_PATH = "SpooferConfig/MarketplaceResolved.json"
 local LUA_PATH = "Matcha_Animation_Changer.lua"
-local CACHE_PATH = "SpooferConfig/Stance_Script_Cache.lua"
+local CACHE_PATH = "SpooferConfig/Stance_Script_Cache_r2.lua"
+local STANCE_RELEASE = "20261030-pagination-r2"
 local MIN_PACKS = 1052
 
 local function warning(message)
@@ -23,7 +24,8 @@ end
 
 local HttpService = game:GetService("HttpService")
 local function fetch(relativePath)
-    local ok, result = pcall(httpget, ROOT .. relativePath)
+    local url = ROOT .. relativePath .. "?stance=" .. STANCE_RELEASE
+    local ok, result = pcall(httpget, url)
     if ok and type(result) == "string" and #result > 0 then
         return result
     end
@@ -37,10 +39,10 @@ local function readCached(path)
     return nil
 end
 local function validScript(body)
-
     return type(body) == "string" and #body > 16000
         and body:find("local MarketCore = {}", 1, true) ~= nil
         and body:find("local function startStanceUI()", 1, true) ~= nil
+        and body:find('local STANCE_RELEASE = "' .. STANCE_RELEASE .. '"', 1, true) ~= nil
 end
 local function countValidPacks(body)
     if type(body) ~= "string" or #body < 1000 then return nil end
@@ -60,7 +62,6 @@ local function countValidPacks(body)
     if count < MIN_PACKS then return nil end
     return count
 end
-
 
 local remoteJSON = fetch(JSON_PATH)
 local remoteScript = fetch(LUA_PATH)
@@ -105,15 +106,12 @@ if not loadedCount then
     end
 end
 
-
 if validScript(remoteScript) then
     local cacheOK = pcall(writefile, CACHE_PATH, remoteScript)
     if not cacheOK then
         warning("Could not cache Lua for offline use; starting downloaded script anyway.")
     end
 end
-
-
 
 local ok, entry = pcall(loadstring, script, "Stance")
 if not ok or type(entry) ~= "function" then
