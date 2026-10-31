@@ -3,6 +3,7 @@ local JSON_PATH = "SpooferConfig/MarketplaceResolved.json"
 local LUA_PATH = "Matcha_Animation_Changer.lua"
 local CACHE_PATH = "SpooferConfig/Stance_Script_Cache_r2.lua"
 local STANCE_RELEASE = "20261030-pagination-r2"
+local JSON_RELEASE = "20261031-swimidle-complete-r3"
 local MIN_PACKS = 1052
 
 local function warning(message)
@@ -24,7 +25,7 @@ end
 
 local HttpService = game:GetService("HttpService")
 local function fetch(relativePath)
-    local url = ROOT .. relativePath .. "?stance=" .. STANCE_RELEASE
+    local url = ROOT .. relativePath .. "?stance=" .. (relativePath == JSON_PATH and JSON_RELEASE or STANCE_RELEASE)
     local ok, result = pcall(httpget, url)
     if ok and type(result) == "string" and #result > 0 then
         return result
@@ -60,14 +61,14 @@ local function countValidPacks(body)
         count = count + 1
     end
     if count < MIN_PACKS then return nil end
-    return count
+    return count, tonumber(parsed.catalogRevision) or 0
 end
 
 local remoteJSON = fetch(JSON_PATH)
 local remoteScript = fetch(LUA_PATH)
 local existingJSON = readCached(JSON_PATH)
-local existingCount = countValidPacks(existingJSON)
-local remoteCount = countValidPacks(remoteJSON)
+local existingCount, existingRevision = countValidPacks(existingJSON)
+local remoteCount, remoteRevision = countValidPacks(remoteJSON)
 local script = nil
 
 if validScript(remoteScript) then
@@ -84,7 +85,8 @@ else
 end
 
 local loadedCount = nil
-if remoteCount and (not existingCount or remoteCount >= existingCount) then
+if remoteCount and (not existingCount or remoteCount >= existingCount or
+    (remoteRevision or 0) > (existingRevision or 0)) then
     local ok, err = pcall(writefile, JSON_PATH, remoteJSON)
     if ok then
         loadedCount = remoteCount
