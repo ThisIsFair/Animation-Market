@@ -2479,13 +2479,16 @@ end
 local function pageControls(total,per,y)
     local cnt=math.max(1,math.ceil(total/per))
     pageNo=math.min(cnt,math.max(1,pageNo))
-    local x=contentX();local w=contentW()
-     
-    local right=x+w
-     
-    plainButton("<",right-126,y,28,29,function()pageNo=math.max(1,pageNo-1);selected=nil;drawFrame()end)
-    middle(pageNo.." / "..cnt,right-92,y,61,29,12,C.dim)
-    plainButton(">",right-27,y,27,29,function()pageNo=math.min(cnt,pageNo+1);selected=nil;drawFrame()end)
+    local w=contentW()
+    local right=contentX()+w
+    local text=pageNo.." / "..cnt
+    local width=math.min(w-84,math.max(76,math.ceil(measureW(text,12,FONT)+18)))
+    local nextX=right-27
+    local textX=nextX-8-width
+    local prevX=textX-8-28
+    plainButton("<",prevX,y,28,29,function()pageNo=math.max(1,pageNo-1);selected=nil;drawFrame()end)
+    middle(text,textX,y,width,29,12,C.dim)
+    plainButton(">",nextX,y,27,29,function()pageNo=math.min(cnt,pageNo+1);selected=nil;drawFrame()end)
 end
 local toastAt=0
 local toastText=""
@@ -2497,7 +2500,7 @@ local function row(p,index,x,y,w,h,ismix)
     local chosen=(selected==p.id)
     if chosen then box(x,y,w,h,C.active,5,4) end
     if chosen then box(x,y+5,3,h-10,C.accent,1,6) end
-    label(string.format("%02d",index%100),x+9,y+(h-13)/2-1,11,C.dim,true)
+    label(tostring(index),x+9,y+(h-13)/2-1,11,C.dim,true)
     local bodyX=x+43
     local titleY=y+(h<=36 and 5 or 9)
     textFit(p.name,bodyX,titleY,w-223,h<=36 and 13 or 15,chosen and C.light or C.text,true)
