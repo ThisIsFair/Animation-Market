@@ -19,8 +19,8 @@ local function defaultState()
         theme = "Mono", accent = 0, scale = 1, opacity = 1, textSize = 14,
         compact = false, rounded = true,
         x = 120, y = 60, w = 900, h = 680,
-        favs = {}, presets = {}, recent = {}, mix = {}, equipped = nil,
-        autoReapply = true, wheelMode = "both", binds = {},
+        favs = {}, presets = {}, recent = {}, mix = {}, mixLocks = {}, collections = {}, equipped = nil,
+        randSource = "all", autoReapply = true, wheelMode = "both", binds = {},
     }
 end
 local State = defaultState()
@@ -35,7 +35,7 @@ local function loadState()
     for k, v in pairs(d) do
         if State[k] == nil and k ~= "equipped" then State[k] = v end
     end
-    for _, k in ipairs({"favs", "presets", "recent", "mix", "binds"}) do
+    for _, k in ipairs({"favs", "presets", "recent", "mix", "mixLocks", "collections", "binds"}) do
         if type(State[k]) ~= "table" then State[k] = {} end
     end
     State.w = math.max(MIN_W, tonumber(State.w) or d.w)
@@ -44,6 +44,27 @@ local function loadState()
     State.opacity = math.clamp(tonumber(State.opacity) or 1, 0.4, 1)
     State.textSize = math.clamp(tonumber(State.textSize) or 14, 11, 18)
     if State.wheelMode ~= "both" and State.wheelMode ~= "favs" and State.wheelMode ~= "presets" then State.wheelMode = "both" end
+    if State.randSource ~= "all" and State.randSource ~= "favorites" and State.randSource ~= "collection" then State.randSource = "all" end
+    local validCollections = {}
+    for _, col in ipairs(State.collections) do
+        if #validCollections < 30 and type(col) == "table" and type(col.id) == "string"
+            and type(col.name) == "string" and col.name ~= "" then
+            local ids, seen = {}, {}
+            if type(col.packs) == "table" then
+                for _, rawId in ipairs(col.packs) do
+                    local id = tostring(rawId)
+                    if id:match("^%d+$") and not seen[id] then
+                        ids[#ids + 1] = id
+                        seen[id] = true
+                    end
+                end
+            end
+            validCollections[#validCollections + 1] = {
+                id = col.id, name = col.name:sub(1, 32), packs = ids
+            }
+        end
+    end
+    State.collections = validCollections
 end
 loadState()
 local dirty, saveAt = false, 0
@@ -304,8 +325,9 @@ end
 local Mouse = { x = 0, y = 0, lx = 0, ly = 0, down = false, clicked = false }
 local UI = {
     visible = true, page = "Home",
-    bSearch = "", bPage = 1, bSort = "name",
+    bSearch = "", bPage = 1, bSort = "name", bFilter = "all", bState = "All",
     fSearch = "", fPage = 1,
+    cName = "", cRename = "", cRenaming = false, cTarget = nil, cPage = 1, cListPage = 1, cVer = 0,
     mixSel = "Idle", mSearch = "", mPage = 1,
     pSearch = "", pName = "", pRename = "", pSel = nil, pRenaming = false, pPage = 1,
     delConfirm = nil, jump = "",
@@ -655,10 +677,137 @@ local function cycleFavorite(dir)
     else nxt = ((idx - 1 + dir) % #list) + 1 end
     equipPack(list[nxt])
 end
+local Extras = { candidates = {} }
+for _, slot in ipairs(SLOTS) do Extras.candidates[slot] = {} end
+for _, p in ipairs(PACKS) do
+    for _, slot in ipairs(SLOTS) do
+        if p.anims[slot] then
+            local list = Extras.candidates[slot]
+            list[#list + 1] = p
+        end
+    end
+end
+function Extras.collection()
+    for _, col in ipairs(State.collections) do
+        if col.id == UI.cTarget then return col end
+    end
+    local col = State.collections[1]
+    UI.cTarget = col and col.id or nil
+    return col
+end
+function Extras.has(col, id)
+    if not col or type(col.packs) ~= "table" then return false end
+    for _, packId in ipairs(col.packs) do
+        if tostring(packId) == tostring(id) then return true end
+    end
+    return false
+end
+function Extras.togglePack(id)
+    local col = Extras.collection()
+    if not col then
+        UI.page = "Collections"
+        toast("Create a collection to organize packs", "info")
+        return
+    end
+    for i, packId in ipairs(col.packs) do
+        if tostring(packId) == tostring(id) then
+            table.remove(col.packs, i)
+            UI.cVer = UI.cVer + 1
+            markDirty()
+            toast("Removed from " .. col.name, "info")
+            return
+        end
+    end
+    col.packs[#col.packs + 1] = tostring(id)
+    UI.cVer = UI.cVer + 1
+    markDirty()
+    toast("Added to " .. col.name, "good")
+end
+function Extras.createCollection()
+    local name = UI.cName:gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 32)
+    if name == "" then toast("Name your collection first", "info"); return end
+    if #State.collections >= 30 then toast("Maximum 30 collections", "bad"); return end
+    for _, col in ipairs(State.collections) do
+        if col.name:lower() == name:lower() then
+            UI.cTarget = col.id
+            toast("Collection already exists", "info")
+            return
+        end
+    end
+    local col = { id = newId(), name = name, packs = {} }
+    State.collections[#State.collections + 1] = col
+    UI.cTarget, UI.cName, UI.cPage, UI.cListPage = col.id, "", 1, 1
+    UI.cVer = UI.cVer + 1
+    blur()
+    markDirty()
+    toast("Collection created", "good")
+end
+function Extras.cycleCollection()
+    if #State.collections == 0 then UI.page = "Collections"; toast("Create a collection first", "info"); return end
+    local current = Extras.collection()
+    local index = 1
+    for i, col in ipairs(State.collections) do
+        if col.id == current.id then index = i; break end
+    end
+    UI.cTarget = State.collections[index % #State.collections + 1].id
+    UI.cListPage = 1
+    UI.bPage = 1
+end
+function Extras.randomizeMix()
+    local used = {}
+    for _, slot in ipairs(SLOTS) do
+        if State.mixLocks[slot] and State.mix[slot] then used[State.mix[slot]] = true end
+    end
+    local allowed = nil
+    if State.randSource == "favorites" then
+        allowed = {}
+        for _, id in ipairs(State.favs) do allowed[tostring(id)] = true end
+    elseif State.randSource == "collection" then
+        allowed = {}
+        local col = Extras.collection()
+        if not col then toast("Create a collection for this shuffle pool", "warn"); return end
+        for _, id in ipairs(col.packs) do allowed[tostring(id)] = true end
+    end
+    local changed, locked, skipped = 0, 0, 0
+    for _, slot in ipairs(SLOTS) do
+        if State.mixLocks[slot] then
+            locked = locked + 1
+        else
+            local pool = Extras.candidates[slot]
+            local candidates = {}
+            for _, p in ipairs(pool) do
+                if allowed == nil or allowed[p.id] then candidates[#candidates + 1] = p.id end
+            end
+            if #candidates == 0 then
+                skipped = skipped + 1
+            else
+                local pick = candidates[math.random(#candidates)]
+                for _ = 1, math.min(24, #candidates * 3) do
+                    local candidate = candidates[math.random(#candidates)]
+                    if not used[candidate] and candidate ~= State.mix[slot] then
+                        pick = candidate
+                        break
+                    end
+                end
+                State.mix[slot] = pick
+                used[pick] = true
+                changed = changed + 1
+            end
+        end
+    end
+    if changed > 0 then markDirty() end
+    local msg = "Shuffled " .. changed .. " states, kept " .. locked .. " locked"
+    if skipped > 0 then msg = msg .. ", " .. skipped .. " unavailable" end
+    toast(msg, skipped > 0 and "warn" or "good")
+end
 local function getList(kind)
     local search = (kind == "b") and UI.bSearch or UI.fSearch
     local sort = (kind == "b") and UI.bSort or "saved"
-    local key = search .. "|" .. sort .. "|" .. UI.favVer .. "|" .. UI.recentVer
+    local col = kind == "b" and Extras.collection() or nil
+    local filter = kind == "b" and UI.bFilter or "all"
+    local state = kind == "b" and UI.bState or "All"
+    local key = search .. "|" .. sort .. "|" .. UI.favVer .. "|" .. UI.recentVer .. "|"
+        .. filter .. "|" .. state .. "|" .. UI.cVer .. "|" .. tostring(col and col.id or "")
     local c = UI.caches[kind]
     if c and c.key == key then return c.list end
     local s = search:lower()
@@ -672,9 +821,24 @@ local function getList(kind)
             if p then src[#src + 1] = p end
         end
     end
+    local favorites, recent, inCollection = {}, {}, {}
+    if kind == "b" then
+        for _, id in ipairs(State.favs) do favorites[tostring(id)] = true end
+        for _, id in ipairs(State.recent) do recent[tostring(id)] = true end
+        if col then for _, id in ipairs(col.packs) do inCollection[tostring(id)] = true end end
+    end
     local list = {}
     for _, p in ipairs(src) do
-        if s == "" or p._ln:find(s, 1, true) then list[#list + 1] = p end
+        local matches = s == "" or p._ln:find(s, 1, true) or p.id:find(s, 1, true)
+        if matches and (state == "All" or p.anims[state]) then
+            local eligible = filter == "all"
+                or (filter == "complete" and p.states == #SLOTS)
+                or (filter == "partial" and p.states < #SLOTS)
+                or (filter == "favorites" and favorites[p.id])
+                or (filter == "recent" and recent[p.id])
+                or (filter == "collection" and inCollection[p.id])
+            if eligible then list[#list + 1] = p end
+        end
     end
     if sort == "name" then
         table.sort(list, function(a, b) if a._ln == b._ln then return a.id < b.id end return a._ln < b._ln end)
@@ -892,7 +1056,27 @@ local function renderPackList(x, y, w, h, kind)
         segmented(x + sw + 8, y, sortW, tb, { {"name", "Name"}, {"recent", "Recent"} },
             UI.bSort, function(k) UI.bSort = k; UI.bPage = 1 end, 20, "sort")
     end
-    local top = y + tb + 10
+    if isB then
+        local filterW = math.max(340, w - 250)
+        segmented(x, y + 42, filterW, 30,
+            { {"all", "All"}, {"complete", "8/8"}, {"partial", "Partial"},
+              {"favorites", "Saved"}, {"recent", "Recent"}, {"collection", "Folder"} },
+            UI.bFilter, function(k) UI.bFilter = k; UI.bPage = 1 end, 20, "bf")
+        local sx = x + filterW + 8
+        button(sx, y + 42, 108, 30, "State: " .. (UI.bState == "All" and "All" or SLOT_LABEL[UI.bState]),
+            "bstate", function()
+                local index = 0
+                for i, slot in ipairs(SLOTS) do if slot == UI.bState then index = i; break end end
+                UI.bState = SLOTS[index + 1] or "All"
+                UI.bPage = 1
+            end, "soft", 20, "Cycle available animation states", FS - 2)
+        local col = Extras.collection()
+        button(sx + 116, y + 42, w - filterW - 124, 30,
+            fit(col and ("To: " .. col.name) or "New collection", w - filterW - 136, FS - 2),
+            "btarget", Extras.cycleCollection, "soft", 20,
+            "Click to choose the collection used by Add", FS - 2)
+    end
+    local top = y + (isB and 82 or (tb + 10))
     local footH = 28
     local bottom = y + h - footH - 10
     local rowH = State.compact and 34 or 42
@@ -930,8 +1114,16 @@ local function renderPackList(x, y, w, h, kind)
             local added = toggleFav(p.id)
             toast(added and "Saved to Favorites" or "Removed from Favorites", "info")
         end, fav and "accent" or "soft", 20)
+        local addX = saveX - 6 - 38
+        if isB then
+            local col = Extras.collection()
+            local inCol = Extras.has(col, p.id)
+            button(addX, cy - 14, 38, 28, inCol and "-" or "+", "cadd" .. p.id,
+                function() Extras.togglePack(p.id) end, inCol and "accent" or "soft", 20,
+                col and ((inCol and "Remove from " or "Add to ") .. col.name) or "Create a collection", FS - 1)
+        end
         local badgeW = 44
-        local badgeX = saveX - 10 - badgeW
+        local badgeX = (isB and (addX - 10 - badgeW) or (saveX - 10 - badgeW))
         local full = p.states == p.maxStates
         pill(badgeX, cy - 10, badgeW, 20, TH.line, TH.bg, 14)
         txt(p.states .. "/" .. p.maxStates, badgeX + badgeW / 2, cy, FS - 2, full and TH.sub or TH.warn, 17, true)
@@ -944,7 +1136,7 @@ local function renderPackList(x, y, w, h, kind)
     end
     if total == 0 then
         if isB then
-            emptyState(x, top, w, bottom - top, "No packs found", "Try a different name.")
+            emptyState(x, top, w, bottom - top, "No packs found", "Change search, state, or filter.")
         elseif UI.fSearch ~= "" then
             emptyState(x, top, w, bottom - top, "No favorites match", "Try a different search.")
         else
