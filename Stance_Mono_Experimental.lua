@@ -1258,9 +1258,12 @@ local function renderCollections(x, y, w, h)
 end
 local function renderMix(x, y, w, h)
     local n = mixCount()
-    txt(n .. "/8 states assigned", x + 2, y + 16, FS, TH.sub, 14)
+    txt(n .. (w < 690 and "/8 set" or "/8 states assigned"), x + 2, y + 16, FS, TH.sub, 14)
     local bx = x + w
     bx = bx - 100; button(bx, y, 100, 32, "Apply mix", "apply", applyMix, "primary", 20)
+    bx = bx - 8 - 112
+    button(bx, y, 112, 32, "Randomize", "randomize", Extras.randomizeMix, "soft", 20,
+        "Shuffle unlocked states, then Apply or Save")
     local sw2 = btnW("Save as preset")
     bx = bx - 8 - sw2
     button(bx, y, sw2, 32, "Save as preset", "tosave", function()
@@ -1274,7 +1277,7 @@ local function renderMix(x, y, w, h)
     local top = y + 44
     local bodyH = h - 44
     local gap = 6
-    local lw = math.max(250, math.floor(w * 0.44))
+    local lw = math.max(276, math.floor(w * 0.48))
     local rh = math.max(30, math.min(42, math.floor((bodyH - 7 * gap) / 8)))
     for i, slot in ipairs(SLOTS) do
         local ry = top + (i - 1) * (rh + gap)
@@ -1285,9 +1288,16 @@ local function renderMix(x, y, w, h)
         local p = pid and PACK_BY_ID[pid]
         local cy = ry + rh / 2
         txt(SLOT_LABEL[slot], x + 14, cy, FS - 1, sel and TH.text or TH.sub, 14, false, true)
-        local maxW = lw - 96 - 14 - (p and 30 or 0)
+        local maxW = lw - 96 - 14 - 104
         txt(p and fit(p.name, maxW, FS - 1) or "Not set", x + 96, cy, FS - 1, p and TH.text or TH.mute, 14)
         reg(x, ry, lw, rh, "slot" .. slot, function() UI.mixSel = slot; UI.mSearch = ""; UI.mPage = 1 end)
+        local locked = State.mixLocks[slot] == true
+        button(x + lw - 100, cy - 11, 60, 22, locked and "Locked" or "Lock", "lock" .. slot,
+            function()
+                State.mixLocks[slot] = not locked
+                markDirty()
+            end, locked and "accent" or "ghost", 20,
+            locked and "Keep this state when randomizing" or "Exclude this state from randomizing", FS - 2)
         if p then
             button(x + lw - 32, cy - 11, 24, 22, "x", "clr" .. slot, function()
                 State.mix[slot] = nil; markDirty()
@@ -1297,6 +1307,14 @@ local function renderMix(x, y, w, h)
     local px, pw = x + lw + 12, w - lw - 12
     card(px, top, pw, bodyH, 22, 10)
     txt("Choose " .. SLOT_LABEL[UI.mixSel], px + 16, top + 20, FS, TH.text, 14, false, true)
+    button(px + pw - 130, top + 5, 114, 26,
+        State.randSource == "favorites" and "Pool: Saved" or
+        (State.randSource == "collection" and "Pool: Folder" or "Pool: All"), "randompool", function()
+            if State.randSource == "all" then State.randSource = "favorites"
+            elseif State.randSource == "favorites" then State.randSource = "collection"
+            else State.randSource = "all" end
+            markDirty()
+        end, "soft", 20, "Randomizer source; click to cycle", FS - 2)
     input(px + 12, top + 38, pw - 24, 30, UI, "mSearch", "msearch", "Search compatible packs", 20,
         function() UI.mPage = 1 end)
     local ltop = top + 78
