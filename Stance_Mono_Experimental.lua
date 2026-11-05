@@ -288,6 +288,16 @@ local function endFrame()
         local e = Pool.tr[i]
         if e.v then e.o.Visible = false; e.v = false end
     end
+    local spare = { sq = 48, tx = 24, ln = 8, tr = 8 }
+    for kind, list in pairs(Pool) do
+        local limit = Idx[kind] + spare[kind]
+        local removed = 0
+        while #list > limit and removed < 20 do
+            local e = table.remove(list)
+            pcall(function() e.o:Remove() end)
+            removed = removed + 1
+        end
+    end
 end
 local function tw(s, size) return #s * size * CHAR_W end
 local function fit(s, maxW, size)
@@ -315,8 +325,6 @@ local UI = {
     busyUntil = 0, tipId = nil, tipSince = 0, tipText = nil,
     caches = {}, favVer = 0, recentVer = 0,
     W = 740, H = 540, W0 = 740,
-    pv = 0, pvTarget = 0, pvPack = nil, pvYaw = math.pi + 0.45, pvZoom = 1, pvSpin = true,
-    pvId = "", pvPlaying = nil, pvVP = nil, orbiting = false, orbitX = 0,
     binding = nil, bindGuard = 0,
 }
 local function toast(msg, kind)
@@ -484,14 +492,6 @@ local function applyToGame(kind, payload)
         return invokeEngine("ApplyStateIds", states)
     elseif kind == "restore" then
         return invokeEngine("Restore")
-    elseif kind == "preview" then
-        if payload == nil then
-            return invokeEngine("StopPreview")
-        end
-        if type(payload) == "table" and payload.rows then
-            return invokeEngine("PreviewRows", payload.rows)
-        end
-        assert(false, "Direct animation ID playback is not supported in this preview")
     end
     assert(false, "Unknown animation operation")
 end
@@ -653,34 +653,6 @@ local function cycleFavorite(dir)
     else nxt = ((idx - 1 + dir) % #list) + 1 end
     equipPack(list[nxt])
 end
-local PV_W = 330
-local function setPreview(open)
-    UI.pvTarget = open and 1 or 0
-    if not open then
-        UI.pvPack = nil
-        UI.pvPlaying = nil
-        pcall(applyToGame, "preview", nil)
-    end
-end
-local function selectPackPreview(p)
-    UI.pvPack = p
-    UI.pvPlaying = nil
-    UI.pvTarget = 1
-    local ok, err = pcall(applyToGame, "preview", p)
-    if not ok then toast("Preview failed: " .. tostring(err), "bad") end
-end
-local function playId()
-    local id = (UI.pvId or ""):gsub("%D", "")
-    if id == "" then toast("Type an animation ID first", "bad"); return end
-    local ok, err = pcall(applyToGame, "preview", { id = id })
-    if ok then
-        UI.pvPlaying = id
-        UI.pvPack = nil
-        toast("Playing animation " .. id, "good")
-    else
-        toast("Could not play: " .. tostring(err), "bad")
-    end
-end
 local function getList(kind)
     local search = (kind == "b") and UI.bSearch or UI.fSearch
     local sort = (kind == "b") and UI.bSort or "saved"
@@ -785,7 +757,7 @@ local function icon(name, cx, cy, col, z)
     end
 end
 local function hit(x, y, w, h)
-    if UI.dragging or UI.resizing or UI.orbiting then return false end
+    if UI.dragging or UI.resizing then return false end
     local mx, my = Mouse.lx, Mouse.ly
     return mx >= x and mx <= x + w and my >= y and my <= y + h
 end
@@ -937,9 +909,8 @@ local function renderPackList(x, y, w, h, kind)
         local cy = ry + rowH / 2
         local hov = hit(x, ry, w, rowH)
         local isEq = State.equipped == p.id
-        local isSel = UI.pvPack == p and UI.pvTarget > 0
-        card(x, ry, w, rowH, 16, 10, isSel and "sel" or (hov and "hov" or nil))
-        reg(x, ry, w, rowH, "row" .. kind .. p.id, function() selectPackPreview(p) end, "Click to preview")
+        card(x, ry, w, rowH, 16, 10, isEq and "sel" or (hov and "hov" or nil))
+        reg(x, ry, w, rowH, "row" .. kind .. p.id, function() equipPack(p) end, "Click to equip")
         if isEq then circle(x + 14, cy, 3, TH.good, 12) end
         txt(tostring(idx), x + 28, cy, FS - 2, TH.mute, 14)
         local rEdge = x + w - 10
@@ -1318,225 +1289,6 @@ local function renderAppearance(x, y, w, h)
         buildTheme(); markDirty(); toast("Appearance reset", "info")
     end, "danger", 20)
 end
-local R15_NAMES = { "HumanoidRootPart", "Head", "UpperTorso", "LowerTorso",
-    "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
-    "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }
-local R6_NAMES = { "HumanoidRootPart", "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" }
-local rig = { char = nil, kind = nil, parts = {}, nextCheck = 0, rx = 1, rz = 0 }
-local function refreshRig()
-    local ok, char = pcall(function() return LocalPlayer.Character end)
-    if not ok or not char then rig.char = nil; rig.kind = nil; return false end
-    local now = tick()
-    if char ~= rig.char or now >= rig.nextCheck then
-        rig.char = char
-        rig.nextCheck = now + 1.5
-        rig.parts = {}
-        local kind = nil
-        if char:FindFirstChild("UpperTorso") then kind = "R15"
-        elseif char:FindFirstChild("Torso") then kind = "R6" end
-        rig.kind = kind
-        if kind then
-            for _, n in ipairs(kind == "R15" and R15_NAMES or R6_NAMES) do
-                rig.parts[n] = char:FindFirstChild(n)
-            end
-        end
-    end
-    return rig.kind ~= nil
-end
-local function samplePose()
-    local P = rig.parts
-    local R15 = rig.kind == "R15"
-    local rootPart = P.HumanoidRootPart or P.LowerTorso or P.Torso
-    if not rootPart then return nil end
-    local rp = rootPart.Position
-    local ox, oy, oz = rp.X, rp.Y, rp.Z
-    local lArm, rArm = R15 and "LeftUpperArm" or "Left Arm", R15 and "RightUpperArm" or "Right Arm"
-    local lLeg, rLeg = R15 and "LeftUpperLeg" or "Left Leg", R15 and "RightUpperLeg" or "Right Leg"
-    local vx, vz = 0, 0
-    local function acc(a, b)
-        if P[a] and P[b] then
-            local pa, pb = P[a].Position, P[b].Position
-            vx = vx + (pb.X - pa.X)
-            vz = vz + (pb.Z - pa.Z)
-        end
-    end
-    acc(lArm, rArm)
-    acc(lLeg, rLeg)
-    local len = math.sqrt(vx * vx + vz * vz)
-    if len > 0.3 then rig.rx, rig.rz = vx / len, vz / len end
-    local rx, rz = rig.rx, rig.rz
-    local bx, bz = -rz, rx
-    local L, Z = {}, {}
-    for n, part in pairs(P) do
-        local p = part.Position
-        local dx, dz = p.X - ox, p.Z - oz
-        L[n] = { dx * rx + dz * rz, p.Y - oy, dx * bx + dz * bz }
-        local sz = part.Size
-        Z[n] = { sz.X, sz.Y, sz.Z }
-    end
-    local function off(a, dx, dy, dz) return { a[1] + dx, a[2] + dy, a[3] + dz } end
-    local function mid3(a, b) return { (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, (a[3] + b[3]) / 2 } end
-    local function chain(anchor, names)
-        local cs = {}
-        for _, n in ipairs(names) do
-            if L[n] then cs[#cs + 1] = L[n] end
-        end
-        local pts = { anchor }
-        if #cs == 0 then return pts end
-        for i = 1, #cs - 1 do pts[#pts + 1] = mid3(cs[i], cs[i + 1]) end
-        local last, before = cs[#cs], pts[#pts]
-        pts[#pts + 1] = { 2 * last[1] - before[1], 2 * last[2] - before[2], 2 * last[3] - before[3] }
-        return pts
-    end
-    local neck, pelvis, lsh, rsh, lhip, rhip, armsL, armsR, legsL, legsR
-    if R15 then
-        local ut, sut, lt, slt = L.UpperTorso, Z.UpperTorso, L.LowerTorso, Z.LowerTorso
-        if not (ut and sut and lt and slt) then return nil end
-        neck = off(ut, 0, sut[2] / 2, 0)
-        pelvis = lt
-        lsh = off(ut, -sut[1] / 2, sut[2] / 2 - 0.3, 0)
-        rsh = off(ut, sut[1] / 2, sut[2] / 2 - 0.3, 0)
-        lhip = off(lt, -slt[1] / 4, -slt[2] / 2, 0)
-        rhip = off(lt, slt[1] / 4, -slt[2] / 2, 0)
-        armsL = chain(lsh, { "LeftUpperArm", "LeftLowerArm", "LeftHand" })
-        armsR = chain(rsh, { "RightUpperArm", "RightLowerArm", "RightHand" })
-        legsL = chain(lhip, { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" })
-        legsR = chain(rhip, { "RightUpperLeg", "RightLowerLeg", "RightFoot" })
-    else
-        local t, st = L.Torso, Z.Torso
-        if not (t and st) then return nil end
-        neck = off(t, 0, st[2] / 2, 0)
-        pelvis = off(t, 0, -st[2] * 0.25, 0)
-        lsh = off(t, -st[1] / 2, st[2] / 2 - 0.3, 0)
-        rsh = off(t, st[1] / 2, st[2] / 2 - 0.3, 0)
-        lhip = off(t, -st[1] / 4, -st[2] / 2, 0)
-        rhip = off(t, st[1] / 4, -st[2] / 2, 0)
-        armsL = chain(lsh, { "Left Arm" })
-        armsR = chain(rsh, { "Right Arm" })
-        legsL = chain(lhip, { "Left Leg" })
-        legsR = chain(rhip, { "Right Leg" })
-    end
-    local B = {}
-    local function bone(a, b, w, side) B[#B + 1] = { a = a, b = b, w = w, side = side } end
-    bone(pelvis, neck, 9, 0)
-    bone(lsh, rsh, 7, 0)
-    bone(lhip, rhip, 7, 0)
-    bone(pelvis, mid3(lhip, rhip), 7, 0)
-    if L.Head then bone(neck, L.Head, 5, 0) end
-    local function addChain(pts, side)
-        for i = 1, #pts - 1 do bone(pts[i], pts[i + 1], math.max(3, 8 - i), side) end
-    end
-    addChain(armsL, -1); addChain(armsR, 1); addChain(legsL, -1); addChain(legsR, 1)
-    local minY = 0
-    for _, b in ipairs(B) do
-        if b.a[2] < minY then minY = b.a[2] end
-        if b.b[2] < minY then minY = b.b[2] end
-    end
-    return { bones = B, head = L.Head, headR = Z.Head and (Z.Head[2] / 2) or 0.6, floor = minY }
-end
-local function drawViewport(vx, vy, vw, vh)
-    card(vx, vy, vw, vh, 16, 30)
-    UI.pvVP = { x = vx, y = vy, w = vw, h = vh }
-    local pose = nil
-    if refreshRig() then
-        local ok, res = pcall(samplePose)
-        if ok then pose = res else rig.char = nil; rig.nextCheck = 0 end
-    end
-    if not pose then
-        txt("No character found", vx + vw / 2, vy + vh / 2, FS, TH.mute, 34, true)
-        return
-    end
-    local sc = math.min(vh * 0.88 / 6.2, vw / 3.4) * UI.pvZoom
-    local cx, cy = vx + vw / 2, vy + vh / 2
-    local cosT, sinT = math.cos(UI.pvYaw), math.sin(UI.pvYaw)
-    local function proj(p)
-        local x = p[1] * cosT + p[3] * sinT
-        local z = -p[1] * sinT + p[3] * cosT
-        local f = 1 / (1 - z / 22)
-        return cx + x * sc * f, cy - (p[2] + 0.25) * sc * f, z, f
-    end
-    local fx, fy = proj({ 0, pose.floor - 0.05, 0 })
-    rect(fx - sc * 1.5, fy - sc * 0.18, sc * 3, sc * 0.36, { 0, 0, 0 }, 33, sc * 0.18, 0.4, true)
-    local core = mix(TH.text, TH.accent, 0.35)
-    local items = {}
-    for _, b in ipairs(pose.bones) do
-        local x1, y1, z1, f1 = proj(b.a)
-        local x2, y2, z2, f2 = proj(b.b)
-        local zm = (z1 + z2) / 2
-        local a = 0.5 + 0.5 * math.clamp((zm + 2.5) / 5, 0, 1)
-        local col = (b.side == 0 and core) or (b.side < 0 and TH.accentHi) or mix(TH.accent, TH.bg, 0.5)
-        local w = b.w * UI.pvZoom * ((f1 + f2) / 2)
-        items[#items + 1] = { d = zm, k = 1, x1 = x1, y1 = y1, x2 = x2, y2 = y2, w = w, c = col, a = a }
-        items[#items + 1] = { d = z2 + 0.01, k = 2, x = x2, y = y2, r = w * 0.5, c = col, a = a }
-    end
-    if pose.head then
-        local hx, hy, hz, hf = proj(pose.head)
-        items[#items + 1] = { d = hz + 0.02, k = 2, x = hx, y = hy, r = pose.headR * sc * hf,
-            c = core, a = 0.5 + 0.5 * math.clamp((hz + 2.5) / 5, 0, 1) }
-    end
-    table.sort(items, function(p, q) return p.d < q.d end)
-    local n = #items
-    for i, it in ipairs(items) do
-        local zi = 36 + math.floor((i - 1) / n * 12)
-        if it.k == 1 then
-            line(it.x1, it.y1, it.x2, it.y2, it.w, it.c, zi, it.a)
-        else
-            rect(it.x - it.r, it.y - it.r, it.r * 2, it.r * 2, it.c, zi, it.r, it.a, true)
-        end
-    end
-    txt("Drag to rotate", vx + 12, vy + vh - 14, FS - 3, TH.mute, 34)
-end
-local function renderPreviewCard(px, py, pw, ph)
-    card(px, py, pw, ph, 28, 10)
-    if UI.pv < 0.995 then return end
-    local ix, iw = px + 16, pw - 32
-    local p = UI.pvPack
-    txt(fit(p and p.name or "Live preview", iw - 40, FS + 1), ix, py + 24, FS + 1, TH.text, 14, false, true)
-    local sub = UI.pvPlaying and ("Animation ID " .. UI.pvPlaying)
-        or (p and (p.states .. "/" .. p.maxStates .. " states") or "Your character, live")
-    txt(fit(sub, iw, FS - 2), ix, py + 44, FS - 2, TH.sub, 14)
-    button(px + pw - 42, py + 12, 26, 26, "x", "pvclose", function() setPreview(false) end,
-        "ghost", 20, "Hide preview", FS)
-    local by = py + ph - 14
-    local wearY, playY, ctlY, idsY
-    if p then wearY = by - 32; by = by - 40 end
-    playY = by - 30; by = by - 38
-    ctlY = by - 28; by = by - 36
-    local vy = py + 60
-    local showIds = p and (by - vy - 68 >= 190)
-    if showIds then idsY = by - 60; by = by - 68 end
-    drawViewport(ix, vy, iw, by - vy)
-    if showIds then
-        for i, slot in ipairs(SLOTS) do
-            local x0 = ix + math.floor((i - 1) / 4) * (iw / 2)
-            local ly = idsY + ((i - 1) % 4) * 15 + 7
-            txt(SLOT_LABEL[slot], x0, ly, FS - 3, TH.sub, 14, false, true)
-            txt(p.anims[slot] or "--", x0 + 62, ly, FS - 3, p.anims[slot] and TH.text or TH.mute, 14)
-        end
-    end
-    local gap = 6
-    local w1 = math.floor(iw * 0.34)
-    local w2 = math.floor((iw - w1 - gap * 3) / 3)
-    button(ix, ctlY, w1, 28, "Reset view", "pvreset", function()
-        UI.pvYaw = math.pi + 0.45; UI.pvZoom = 1
-    end, "soft", 20)
-    button(ix + w1 + gap, ctlY, w2, 28, "-", "pvzo", function()
-        UI.pvZoom = math.max(0.6, UI.pvZoom * 0.85)
-    end, "soft", 20, "Zoom out", FS + 2)
-    button(ix + w1 + gap * 2 + w2, ctlY, w2, 28, "+", "pvzi", function()
-        UI.pvZoom = math.min(1.8, UI.pvZoom / 0.85)
-    end, "soft", 20, "Zoom in", FS + 2)
-    button(ix + w1 + gap * 3 + w2 * 2, ctlY, w2, 28, "Spin", "pvspin", function()
-        UI.pvSpin = not UI.pvSpin
-    end, UI.pvSpin and "accent" or "soft", 20, "Auto-rotate")
-    input(ix, playY, iw - 70, 30, UI, "pvId", "pvid", "Animation ID", 20, nil, playId)
-    button(ix + iw - 64, playY, 64, 30, "Play", "pvplay", playId, "primary", 20)
-    if p then
-        local isEq = State.equipped == p.id
-        button(ix, wearY, iw, 32, isEq and "Equipped" or "Wear this pack", "pvwear",
-            (not isEq) and function() equipPack(p) end or nil, isEq and "good" or "primary", 20)
-    end
-end
 local PAGES = {
     { "Home", "Home" }, { "Browse", "Browse" }, { "Favorites", "Favorites" }, { "MixMatch", "Mix" },
     { "Presets", "Presets" }, { "Controls", "Controls" },
@@ -1545,7 +1297,7 @@ local PAGE_TITLE = { Home = "Your workspace", Browse = "Browse", Favorites = "Fa
     Presets = "Presets", Controls = "Controls", Appearance = "Settings" }
 local PAGE_SUB = {
     Home = "A clear view of your setup. Pick an animation, fine-tune it, swap fast.",
-    Browse = "Find an animation pack. Click a row to preview it on your character.",
+    Browse = "Browse real animation packs. Select Wear to equip one.",
     Favorites = "Your saved packs, one click away.",
     MixMatch = "Mix and match animations for each movement state.",
     Presets = "Save a mix and switch back to it any time.",
@@ -1594,23 +1346,23 @@ local function renderHome(x, y, w, h)
     local py = y + cardH + gap
     local ph = h - cardH - gap
     card(x, py, w, ph, 22, 10)
-    txt("Live preview", x + 22, py + 28, FS + 1, TH.text, 14)
-    local pname = UI.pvPack and UI.pvPack.name
-    txt(fit(pname and ("Previewing " .. pname) or "Your character, mirrored live.", 230, FS - 3),
-        x + 22, py + 50, FS - 3, TH.mute, 14)
-    local by = py + ph - 20 - 30
-    button(x + 20, by, 90, 30, "Reset view", "hreset", function()
-        UI.pvYaw = math.pi + 0.45; UI.pvZoom = 1
-    end, "soft", 20)
-    button(x + 116, by, 58, 30, "Spin", "hspin", function() UI.pvSpin = not UI.pvSpin end,
-        UI.pvSpin and "accent" or "soft", 20, "Auto-rotate")
-    button(x + 180, by, 76, 30, "Expand", "hexpand", function() setPreview(UI.pvTarget == 0) end,
-        "soft", 20, "Open the side preview")
-    local vx, vy, vw, vh = x + 272, py + 16, w - 272 - 16, ph - 32
-    if UI.pvTarget > 0 then
-        txt("Preview is open on the right", vx + vw / 2, vy + vh / 2, FS - 1, TH.mute, 14, true)
-    else
-        drawViewport(vx, vy, vw, vh)
+    txt("Your library", x + 22, py + 28, FS + 1, TH.text, 14, false, true)
+    txt(tostring(#PACKS) .. " animation packs  |  " .. tostring(#State.favs) .. " favorites  |  "
+        .. tostring(#State.presets) .. " presets", x + 22, py + 50, FS - 2, TH.sub, 14)
+    button(x + 20, py + 66, 140, 30, "Browse packs", "quickbrowse", function() UI.page = "Browse" end, "primary", 20)
+    button(x + 168, py + 66, 124, 30, "Favorites", "quickfav", function() UI.page = "Favorites" end, "soft", 20)
+    local recentY = py + 112
+    if #State.recent > 0 and recentY + 30 < py + ph then
+        txt("RECENTLY EQUIPPED", x + 22, recentY, FS - 3, TH.mute, 14, false, true)
+        local maxRows = math.min(2, math.floor((py + ph - recentY - 24) / 33))
+        for i = 1, maxRows do
+            local p = PACK_BY_ID[State.recent[i]]
+            if p then
+                local ry = recentY + 18 + (i - 1) * 32
+                txt(fit(p.name, w - 146, FS - 1), x + 22, ry, FS - 1, TH.text, 14)
+                button(x + w - 90, ry - 14, 68, 27, "Wear", "recent" .. i, function() equipPack(p) end, "soft", 20)
+            end
+        end
     end
 end
 local function renderWindow()
@@ -1651,9 +1403,7 @@ local function renderWindow()
         reg(cxc - 15, hy - 15, 30, 30, id, fn, tip)
     end
     circBtn(rE - 15, "close", function() UI.visible = false; blur() end, "Close (F4)", "close", false)
-    circBtn(rE - 53, "pvtoggle", function() setPreview(UI.pvTarget == 0) end,
-        "Show your character with the animation", "panel", UI.pvTarget > 0)
-    local sx = rE - 53 - 15 - 12 - 78
+    local sx = rE - 15 - 12 - 78
     button(sx, hy - 15, 78, 30, "Search", "gsearch", function()
         UI.page = "Browse"; focusInput("bsearch")
     end, "soft", 20, "Search animation packs")
@@ -1690,7 +1440,6 @@ local function renderWindow()
     local rw = btnW("Restore default")
     button(fr - 112 - 8 - 84 - 8 - rw, fcy - 17, rw, 34, "Restore default", "restore", restoreDefaults,
         "ghost", 20, "Go back to your normal animations")
-    if UI.pv > 0.01 then renderPreviewCard(W0 - 4, 14, W - W0 - 10, H - 28) end
     rect(W - 26, H - 26, 3, 3, TH.mute, 30, 1, nil, true)
     rect(W - 32, H - 26, 3, 3, TH.mute, 30, 1, nil, true)
     rect(W - 26, H - 32, 3, 3, TH.mute, 30, 1, nil, true)
@@ -1719,46 +1468,64 @@ end
 local renderOverlay
 local paintedX, paintedY = nil, nil
 local lastPaint = 0
-local PAINT_INTERVAL = 1 / 60
-local function moveDrawings()
-    if paintedX == nil or paintedY == nil then return false end
-    local dx = round(OX - paintedX)
-    local dy = round(OY - paintedY)
-    if dx == 0 and dy == 0 then return true end
-    for _, e in ipairs(Pool.sq) do
-        if e.v then
-            e.px, e.py = e.px + dx, e.py + dy
-            e.o.Position = Vector2.new(e.px, e.py)
+local PAINT_INTERVAL = 1 / 30
+local IDLE_PAINT_INTERVAL = 1 / 8
+local lastMouseX, lastMouseY = nil, nil
+local lastVisible, lastPage = nil, nil
+local lastFocused, lastWheel = nil, nil
+local renderDuration, renderPeak, renderFrames = 0, 0, 0
+local ghost = { border = nil, title = nil, active = false }
+local function makeGhost()
+    if not ghost.border then
+        local outline = Drawing.new("Square")
+        outline.Filled = false
+        outline.Color = C(TH.text)
+        outline.Transparency = 0.8
+        outline.ZIndex = 300
+        outline.Visible = false
+        pcall(function() outline.Corner = 20 end)
+        ghost.border = outline
+        local title = Drawing.new("Text")
+        title.Text = "S T A N C E"
+        title.Font = FONT_BOLD
+        title.Color = C(TH.text)
+        title.Size = 16
+        pcall(function() title.FontSize = 16 end)
+        title.ZIndex = 301
+        title.Visible = false
+        ghost.title = title
+    end
+end
+local function hideMainDrawings()
+    for _, list in pairs(Pool) do
+        for _, e in ipairs(list) do
+            if e.v then e.o.Visible = false; e.v = false end
         end
     end
-    for _, e in ipairs(Pool.tx) do
-        if e.v then
-            e.px, e.py = e.px + dx, e.py + dy
-            e.o.Position = Vector2.new(e.px, e.py)
-        end
-    end
-    for _, e in ipairs(Pool.ln) do
-        if e.v then
-            e.ax, e.ay = e.ax + dx, e.ay + dy
-            e.bx, e.by = e.bx + dx, e.by + dy
-            e.o.From = Vector2.new(e.ax, e.ay)
-            e.o.To = Vector2.new(e.bx, e.by)
-        end
-    end
-    for _, e in ipairs(Pool.tr) do
-        if e.v then
-            e.x1, e.y1 = e.x1 + dx, e.y1 + dy
-            e.x2, e.y2 = e.x2 + dx, e.y2 + dy
-            e.x3, e.y3 = e.x3 + dx, e.y3 + dy
-            e.o.PointA = Vector2.new(e.x1, e.y1)
-            e.o.PointB = Vector2.new(e.x2, e.y2)
-            e.o.PointC = Vector2.new(e.x3, e.y3)
-        end
-    end
-    paintedX, paintedY = OX, OY
-    return true
+end
+local function drawGhost()
+    if not ghost.active then return end
+    local frame = ghost.border
+    frame.Position = Vector2.new(round(State.x), round(State.y))
+    frame.Size = Vector2.new(round(UI.W * S), round(UI.H * S))
+    ghost.title.Position = Vector2.new(round(State.x + 26 * S), round(State.y + 34 * S))
+end
+local function startGhost()
+    makeGhost()
+    hideMainDrawings()
+    ghost.active = true
+    ghost.border.Visible = true
+    ghost.title.Visible = true
+    drawGhost()
+end
+local function stopGhost()
+    if not ghost.active then return end
+    ghost.active = false
+    if ghost.border then ghost.border.Visible = false end
+    if ghost.title then ghost.title.Visible = false end
 end
 local function render()
+    local started = os.clock()
     beginFrame()
     UI.prevInputs = UI.inputs
     UI.prevButtons = UI.buttons
@@ -1775,12 +1542,14 @@ local function render()
     end
     if tid ~= UI.tipId then UI.tipId = tid; UI.tipSince = tick() end
     UI.tipText = tip
-    UI.pvVP = nil
     if UI.visible then renderWindow() end
     renderOverlay()
     endFrame()
     paintedX, paintedY = OX, OY
     lastPaint = os.clock()
+    renderDuration = (lastPaint - started) * 1000
+    renderPeak = math.max(renderPeak * 0.98, renderDuration)
+    renderFrames = renderFrames + 1
 end
 local CHAR_MAP, SHIFT_MAP = {}, {}
 for i = 0x30, 0x39 do CHAR_MAP[i] = string.char(i) end
@@ -2123,20 +1892,9 @@ local function step(dt)
     FS = State.textSize
     S = State.scale
     local vp = workspace.CurrentCamera.ViewportSize
-    UI.pv = UI.pv + (UI.pvTarget - UI.pv) * math.min(1, dt * 14)
-    if math.abs(UI.pvTarget - UI.pv) < 0.004 then UI.pv = UI.pvTarget end
-    local ez = 1 - (1 - UI.pv) ^ 3
-    local extra = round(PV_W * ez)
     local baseW = State.w
-    local maxTotal = vp.X / S - 24
-    if baseW + extra > maxTotal then baseW = math.max(MIN_W, math.floor(maxTotal - extra)) end
-    UI.W0, UI.W, UI.H = baseW, baseW + extra, State.h
-    if extra > 0 and not UI.dragging then
-        local over = State.x + UI.W * S - vp.X
-        if over > 0 then State.x = math.max(0, State.x - over) end
-    end
+    UI.W0, UI.W, UI.H = baseW, baseW, State.h
     OX, OY = State.x, State.y
-    if UI.pvSpin and not UI.orbiting and UI.pv > 0.5 then UI.pvYaw = UI.pvYaw + dt * 0.7 end
     local m = LocalPlayer:GetMouse()
     Mouse.x, Mouse.y = m.X, m.Y
     Mouse.lx, Mouse.ly = (Mouse.x - OX) / S, (Mouse.y - OY) / S
@@ -2177,15 +1935,27 @@ local function step(dt)
         Mouse.lx = (Mouse.x - OX) / S
         Mouse.ly = (Mouse.y - OY) / S
     end
-    local paintNow = os.clock()
-    local paintDue = (paintNow - lastPaint >= PAINT_INTERVAL) or Mouse.clicked
-        or (UI.visible and not Mouse.down and (UI.dragging or UI.resizing or UI.orbiting))
-        or paintedX == nil
-    if paintDue then
-        local moved = UI.visible and UI.dragging and Mouse.down and not wheel.open and moveDrawings()
-        if not moved then render() end
-        lastPaint = paintNow
+    if UI.dragging and not Mouse.down then
+        UI.dragging = false
+        stopGhost()
+        paintedX = nil
+        markDirty()
     end
+    local paintNow = os.clock()
+    local moving = Mouse.x ~= lastMouseX or Mouse.y ~= lastMouseY
+    local interval = (moving or UI.focus or UI.binding or wheel.open or #UI.toasts > 0)
+        and PAINT_INTERVAL or IDLE_PAINT_INTERVAL
+    local paintDue = paintedX == nil or Mouse.clicked or UI.visible ~= lastVisible
+        or UI.page ~= lastPage or UI.focus ~= lastFocused or wheel.open ~= lastWheel
+        or paintNow - lastPaint >= interval
+    if ghost.active then
+        drawGhost()
+    elseif paintDue then
+        render()
+    end
+    lastMouseX, lastMouseY = Mouse.x, Mouse.y
+    lastVisible, lastPage = UI.visible, UI.page
+    lastFocused, lastWheel = UI.focus, wheel.open
     if UI.visible and Mouse.clicked and not wheel.open then
         local hitB
         for i = #UI.buttons, 1, -1 do
@@ -2204,27 +1974,12 @@ local function step(dt)
                 UI.resizing = true
                 UI.rx = UI.W - lx
                 UI.ry = UI.H - ly
-            elseif UI.pvVP and lx >= UI.pvVP.x and lx <= UI.pvVP.x + UI.pvVP.w
-                and ly >= UI.pvVP.y and ly <= UI.pvVP.y + UI.pvVP.h then
-                UI.orbiting = true
-                UI.orbitX = Mouse.x
             elseif lx >= 0 and lx <= UI.W and ly >= 0 and ly <= 76 then
                 UI.dragging = true
                 UI.dx = Mouse.x - State.x
                 UI.dy = Mouse.y - State.y
+                startGhost()
             end
-        end
-    end
-    if UI.dragging and not Mouse.down then
-        UI.dragging = false
-        markDirty()
-    end
-    if UI.orbiting then
-        if Mouse.down then
-            UI.pvYaw = UI.pvYaw + (Mouse.x - UI.orbitX) * 0.012
-            UI.orbitX = Mouse.x
-        else
-            UI.orbiting = false
         end
     end
     if UI.resizing then
@@ -2249,11 +2004,18 @@ _G.StanceDevStats = function()
         hoverCapture = UI.visible and Mouse.x >= OX and Mouse.x <= OX + UI.W * S
             and Mouse.y >= OY and Mouse.y <= OY + UI.H * S,
         paintedAt = lastPaint,
+        dragGhost = ghost.active,
+        renderMs = renderDuration,
+        renderPeakMs = renderPeak,
+        renderCount = renderFrames,
     }
 end
 _G.StanceUnload = function()
     alive = false
     pcall(function() conn:Disconnect() end)
+    stopGhost()
+    if ghost.border then pcall(function() ghost.border:Remove() end) end
+    if ghost.title then pcall(function() ghost.title:Remove() end) end
     for _, list in pairs(Pool) do
         for _, e in ipairs(list) do pcall(function() e.o:Remove() end) end
     end
