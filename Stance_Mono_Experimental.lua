@@ -1474,56 +1474,6 @@ local lastMouseX, lastMouseY = nil, nil
 local lastVisible, lastPage = nil, nil
 local lastFocused, lastWheel = nil, nil
 local renderDuration, renderPeak, renderFrames = 0, 0, 0
-local ghost = { border = nil, title = nil, active = false }
-local function makeGhost()
-    if not ghost.border then
-        local outline = Drawing.new("Square")
-        outline.Filled = false
-        outline.Color = C(TH.text)
-        outline.Transparency = 0.8
-        outline.ZIndex = 300
-        outline.Visible = false
-        pcall(function() outline.Corner = 20 end)
-        ghost.border = outline
-        local title = Drawing.new("Text")
-        title.Text = "S T A N C E"
-        title.Font = FONT_BOLD
-        title.Color = C(TH.text)
-        title.Size = 16
-        pcall(function() title.FontSize = 16 end)
-        title.ZIndex = 301
-        title.Visible = false
-        ghost.title = title
-    end
-end
-local function hideMainDrawings()
-    for _, list in pairs(Pool) do
-        for _, e in ipairs(list) do
-            if e.v then e.o.Visible = false; e.v = false end
-        end
-    end
-end
-local function drawGhost()
-    if not ghost.active then return end
-    local frame = ghost.border
-    frame.Position = Vector2.new(round(State.x), round(State.y))
-    frame.Size = Vector2.new(round(UI.W * S), round(UI.H * S))
-    ghost.title.Position = Vector2.new(round(State.x + 26 * S), round(State.y + 34 * S))
-end
-local function startGhost()
-    makeGhost()
-    hideMainDrawings()
-    ghost.active = true
-    ghost.border.Visible = true
-    ghost.title.Visible = true
-    drawGhost()
-end
-local function stopGhost()
-    if not ghost.active then return end
-    ghost.active = false
-    if ghost.border then ghost.border.Visible = false end
-    if ghost.title then ghost.title.Visible = false end
-end
 local function render()
     local started = os.clock()
     beginFrame()
@@ -1887,8 +1837,10 @@ function renderOverlay()
     S, OX, OY = sS, sX, sY
 end
 local prevDown, f4Held, homeHeld = false, false, false
+local stepMs, stepPeakMs, stepFrames = 0, 0, 0
 local lastErr = nil
 local function step(dt)
+    local stepStart = os.clock()
     FS = State.textSize
     S = State.scale
     local vp = workspace.CurrentCamera.ViewportSize
@@ -1937,7 +1889,6 @@ local function step(dt)
     end
     if UI.dragging and not Mouse.down then
         UI.dragging = false
-        stopGhost()
         paintedX = nil
         markDirty()
     end
@@ -1945,14 +1896,11 @@ local function step(dt)
     local moving = Mouse.x ~= lastMouseX or Mouse.y ~= lastMouseY
     local interval = (moving or UI.focus or UI.binding or wheel.open or #UI.toasts > 0)
         and PAINT_INTERVAL or IDLE_PAINT_INTERVAL
-    local paintDue = paintedX == nil or Mouse.clicked or UI.visible ~= lastVisible
+    local paintDue = paintedX == nil or Mouse.clicked or (UI.dragging and moving and paintNow - lastPaint >= PAINT_INTERVAL)
+        or UI.visible ~= lastVisible
         or UI.page ~= lastPage or UI.focus ~= lastFocused or wheel.open ~= lastWheel
         or paintNow - lastPaint >= interval
-    if ghost.active then
-        drawGhost()
-    elseif paintDue then
-        render()
-    end
+    if paintDue then render() end
     lastMouseX, lastMouseY = Mouse.x, Mouse.y
     lastVisible, lastPage = UI.visible, UI.page
     lastFocused, lastWheel = UI.focus, wheel.open
@@ -1978,7 +1926,6 @@ local function step(dt)
                 UI.dragging = true
                 UI.dx = Mouse.x - State.x
                 UI.dy = Mouse.y - State.y
-                startGhost()
             end
         end
     end
@@ -1992,6 +1939,9 @@ local function step(dt)
     end
     syncInput()
     flushSave()
+    stepMs = (os.clock() - stepStart) * 1000
+    stepPeakMs = math.max(stepPeakMs * 0.98, stepMs)
+    stepFrames = stepFrames + 1
 end
 _G.StanceDevStats = function()
     return {
@@ -2004,18 +1954,18 @@ _G.StanceDevStats = function()
         hoverCapture = UI.visible and Mouse.x >= OX and Mouse.x <= OX + UI.W * S
             and Mouse.y >= OY and Mouse.y <= OY + UI.H * S,
         paintedAt = lastPaint,
-        dragGhost = ghost.active,
         renderMs = renderDuration,
         renderPeakMs = renderPeak,
         renderCount = renderFrames,
+        stepMs = stepMs,
+        stepPeakMs = stepPeakMs,
+        stepCount = stepFrames,
+        dragging = UI.dragging,
     }
 end
 _G.StanceUnload = function()
     alive = false
     pcall(function() conn:Disconnect() end)
-    stopGhost()
-    if ghost.border then pcall(function() ghost.border:Remove() end) end
-    if ghost.title then pcall(function() ghost.title:Remove() end) end
     for _, list in pairs(Pool) do
         for _, e in ipairs(list) do pcall(function() e.o:Remove() end) end
     end
