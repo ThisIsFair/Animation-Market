@@ -351,13 +351,24 @@ local function casSet(on)
     casBound = ok
 end
 local inputBlocked = false
+local inputChanged = 0
 local function syncInput(force)
-    local want = UI.visible and (UI.focus ~= nil or UI.binding ~= nil)
-    if force or want ~= inputBlocked then
-        inputBlocked = want
-        if type(setrobloxinput) == "function" then pcall(setrobloxinput, not want) end
+    local inside = UI.visible and Mouse.x >= OX and Mouse.x <= OX + UI.W * S
+        and Mouse.y >= OY and Mouse.y <= OY + UI.H * S
+    local focused = UI.visible and (UI.focus ~= nil or UI.binding ~= nil)
+    local want = focused or inside
+    if want ~= inputBlocked or force then
+        if type(setrobloxinput) == "function" then
+            local ok = pcall(setrobloxinput, not want)
+            if ok then
+                inputBlocked = want
+                inputChanged = tick()
+            end
+        else
+            inputBlocked = want
+        end
     end
-    casSet(want)
+    casSet(focused)
 end
 local function blur()
     UI.focus = nil
@@ -1707,6 +1718,8 @@ local function renderWindow()
 end
 local renderOverlay
 local paintedX, paintedY = nil, nil
+local lastPaint = 0
+local PAINT_INTERVAL = 1 / 60
 local function moveDrawings()
     if paintedX == nil or paintedY == nil then return false end
     local dx = round(OX - paintedX)
@@ -1767,6 +1780,7 @@ local function render()
     renderOverlay()
     endFrame()
     paintedX, paintedY = OX, OY
+    lastPaint = os.clock()
 end
 local CHAR_MAP, SHIFT_MAP = {}, {}
 for i = 0x30, 0x39 do CHAR_MAP[i] = string.char(i) end
@@ -2163,8 +2177,15 @@ local function step(dt)
         Mouse.lx = (Mouse.x - OX) / S
         Mouse.ly = (Mouse.y - OY) / S
     end
-    local moved = UI.visible and UI.dragging and Mouse.down and not wheel.open and moveDrawings()
-    if not moved then render() end
+    local paintNow = os.clock()
+    local paintDue = (paintNow - lastPaint >= PAINT_INTERVAL) or Mouse.clicked
+        or (UI.visible and not Mouse.down and (UI.dragging or UI.resizing or UI.orbiting))
+        or paintedX == nil
+    if paintDue then
+        local moved = UI.visible and UI.dragging and Mouse.down and not wheel.open and moveDrawings()
+        if not moved then render() end
+        lastPaint = paintNow
+    end
     if UI.visible and Mouse.clicked and not wheel.open then
         local hitB
         for i = #UI.buttons, 1, -1 do
@@ -2217,14 +2238,29 @@ local function step(dt)
     syncInput()
     flushSave()
 end
+_G.StanceDevStats = function()
+    return {
+        squares = #Pool.sq,
+        texts = #Pool.tx,
+        lines = #Pool.ln,
+        triangles = #Pool.tr,
+        inputBlocked = inputBlocked,
+        focus = UI.focus,
+        hoverCapture = UI.visible and Mouse.x >= OX and Mouse.x <= OX + UI.W * S
+            and Mouse.y >= OY and Mouse.y <= OY + UI.H * S,
+        paintedAt = lastPaint,
+    }
+end
 _G.StanceUnload = function()
     alive = false
     pcall(function() conn:Disconnect() end)
     for _, list in pairs(Pool) do
         for _, e in ipairs(list) do pcall(function() e.o:Remove() end) end
     end
-    pcall(setrobloxinput, true)
+    if type(setrobloxinput) == "function" then pcall(setrobloxinput, true) end
+    inputBlocked = false
     casSet(false)
+    _G.StanceDevStats = nil
     if type(_G.StanceEngineUnload) == "function" then pcall(_G.StanceEngineUnload) end
 end
 conn = RunService.Heartbeat:Connect(function(dt)
