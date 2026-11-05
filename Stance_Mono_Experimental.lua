@@ -288,16 +288,6 @@ local function endFrame()
         local e = Pool.tr[i]
         if e.v then e.o.Visible = false; e.v = false end
     end
-    local spare = { sq = 48, tx = 24, ln = 8, tr = 8 }
-    for kind, list in pairs(Pool) do
-        local limit = Idx[kind] + spare[kind]
-        local removed = 0
-        while #list > limit and removed < 20 do
-            local e = table.remove(list)
-            pcall(function() e.o:Remove() end)
-            removed = removed + 1
-        end
-    end
 end
 local function tw(s, size) return #s * size * CHAR_W end
 local function fit(s, maxW, size)
@@ -1468,8 +1458,55 @@ end
 local renderOverlay
 local paintedX, paintedY = nil, nil
 local lastPaint = 0
-local PAINT_INTERVAL = 1 / 30
-local IDLE_PAINT_INTERVAL = 1 / 8
+local PAINT_INTERVAL = 1 / 60
+local IDLE_PAINT_INTERVAL = 1 / 24
+local DRAG_INTERVAL = 1 / 120
+local lastDragPaint = 0
+local dragDuration, dragPeak, dragMoves = 0, 0, 0
+local function translateDrawings()
+    if paintedX == nil or paintedY == nil then return false end
+    local dx, dy = round(OX - paintedX), round(OY - paintedY)
+    if dx == 0 and dy == 0 then return true end
+    local started = os.clock()
+    for i = 1, Idx.sq do
+        local e = Pool.sq[i]
+        if e and e.v then
+            e.px, e.py = e.px + dx, e.py + dy
+            e.o.Position = Vector2.new(e.px, e.py)
+        end
+    end
+    for i = 1, Idx.tx do
+        local e = Pool.tx[i]
+        if e and e.v then
+            e.px, e.py = e.px + dx, e.py + dy
+            e.o.Position = Vector2.new(e.px, e.py)
+        end
+    end
+    for i = 1, Idx.ln do
+        local e = Pool.ln[i]
+        if e and e.v then
+            e.ax, e.ay, e.bx, e.by = e.ax + dx, e.ay + dy, e.bx + dx, e.by + dy
+            e.o.From = Vector2.new(e.ax, e.ay)
+            e.o.To = Vector2.new(e.bx, e.by)
+        end
+    end
+    for i = 1, Idx.tr do
+        local e = Pool.tr[i]
+        if e and e.v then
+            e.x1, e.y1 = e.x1 + dx, e.y1 + dy
+            e.x2, e.y2 = e.x2 + dx, e.y2 + dy
+            e.x3, e.y3 = e.x3 + dx, e.y3 + dy
+            e.o.PointA = Vector2.new(e.x1, e.y1)
+            e.o.PointB = Vector2.new(e.x2, e.y2)
+            e.o.PointC = Vector2.new(e.x3, e.y3)
+        end
+    end
+    paintedX, paintedY = OX, OY
+    dragDuration = (os.clock() - started) * 1000
+    dragPeak = math.max(dragPeak * 0.98, dragDuration)
+    dragMoves = dragMoves + 1
+    return true
+end
 local lastMouseX, lastMouseY = nil, nil
 local lastVisible, lastPage = nil, nil
 local lastFocused, lastWheel = nil, nil
@@ -1838,6 +1875,7 @@ function renderOverlay()
 end
 local prevDown, f4Held, homeHeld = false, false, false
 local stepMs, stepPeakMs, stepFrames = 0, 0, 0
+local heartbeatHz, heartbeatCount, heartbeatWindow = 0, 0, os.clock()
 local lastErr = nil
 local function step(dt)
     local stepStart = os.clock()
@@ -1894,13 +1932,21 @@ local function step(dt)
     end
     local paintNow = os.clock()
     local moving = Mouse.x ~= lastMouseX or Mouse.y ~= lastMouseY
-    local interval = (moving or UI.focus or UI.binding or wheel.open or #UI.toasts > 0)
-        and PAINT_INTERVAL or IDLE_PAINT_INTERVAL
-    local paintDue = paintedX == nil or Mouse.clicked or (UI.dragging and moving and paintNow - lastPaint >= PAINT_INTERVAL)
-        or UI.visible ~= lastVisible
-        or UI.page ~= lastPage or UI.focus ~= lastFocused or wheel.open ~= lastWheel
-        or paintNow - lastPaint >= interval
-    if paintDue then render() end
+    local draggingLive = UI.visible and UI.dragging and Mouse.down and not wheel.open
+    if draggingLive then
+        if moving and paintNow - lastDragPaint >= DRAG_INTERVAL then
+            if not translateDrawings() then render() end
+            lastDragPaint = paintNow
+        end
+    else
+        local interval = (moving or UI.focus or UI.binding or wheel.open or #UI.toasts > 0)
+            and PAINT_INTERVAL or IDLE_PAINT_INTERVAL
+        local paintDue = paintedX == nil or Mouse.clicked
+            or UI.visible ~= lastVisible or UI.page ~= lastPage
+            or UI.focus ~= lastFocused or wheel.open ~= lastWheel
+            or paintNow - lastPaint >= interval
+        if paintDue then render() end
+    end
     lastMouseX, lastMouseY = Mouse.x, Mouse.y
     lastVisible, lastPage = UI.visible, UI.page
     lastFocused, lastWheel = UI.focus, wheel.open
@@ -1942,6 +1988,12 @@ local function step(dt)
     stepMs = (os.clock() - stepStart) * 1000
     stepPeakMs = math.max(stepPeakMs * 0.98, stepMs)
     stepFrames = stepFrames + 1
+    heartbeatCount = heartbeatCount + 1
+    if os.clock() - heartbeatWindow >= 1 then
+        heartbeatHz = heartbeatCount / (os.clock() - heartbeatWindow)
+        heartbeatCount = 0
+        heartbeatWindow = os.clock()
+    end
 end
 _G.StanceDevStats = function()
     return {
@@ -1957,9 +2009,14 @@ _G.StanceDevStats = function()
         renderMs = renderDuration,
         renderPeakMs = renderPeak,
         renderCount = renderFrames,
+        dragMs = dragDuration,
+        dragPeakMs = dragPeak,
+        dragMoves = dragMoves,
+        lastFramePaintAgeMs = (os.clock() - lastPaint) * 1000,
         stepMs = stepMs,
         stepPeakMs = stepPeakMs,
         stepCount = stepFrames,
+        heartbeatHz = heartbeatHz,
         dragging = UI.dragging,
     }
 end
