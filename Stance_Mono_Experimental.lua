@@ -1825,24 +1825,23 @@ local function drawWheel()
     local rings = wheel.rings
     local R = rings[#rings].r1
     local op = 1 / State.opacity
-    circle(cx, cy, R + 10, TH.line, 98, op)
-    circle(cx, cy, R + 9, TH.bg, 99, op)
+    circle(cx, cy, R + 7, TH.line, 98, op)
+    circle(cx, cy, R + 6, TH.bg, 99, op)
     for j = #rings, 1, -1 do
         local ring = rings[j]
         local z = 100 + (#rings - j) * 2
-        circle(cx, cy, ring.r1 + 1, TH.line, z, op)
-        circle(cx, cy, ring.r1, TH.ctl, z + 1, op)
-        circle(cx, cy, ring.r0 + 1, TH.line, z + 2, op)
-        circle(cx, cy, ring.r0, TH.bg, z + 3, op)
+        local fill = j == #rings and TH.ctl or TH.ctlHi
+        circle(cx, cy, ring.r1, fill, z, op)
+        circle(cx, cy, ring.r0, TH.bg, z + 1, op)
     end
     for _, ring in ipairs(rings) do
         local d = ring.step or (2 * math.pi / math.max(1, #ring.items))
-        local r0, r1 = ring.r0 + 2, ring.r1 - 2
+        local r0, r1 = ring.r0 + 3, ring.r1 - 3
         for i = 1, #ring.items do
             local angle = (i - 1.5) * d
             local sx, sy = math.sin(angle), -math.cos(angle)
             line(cx + r0 * sx, cy + r0 * sy, cx + r1 * sx, cy + r1 * sy,
-                1, TH.lineHi, 104, op)
+                1, TH.line, 104, op)
         end
     end
     local sel = wheel.sel
@@ -1863,15 +1862,15 @@ local function drawWheel()
             end
         end
     end
-    circle(cx, cy, 47, TH.lineHi, 110, op)
+    circle(cx, cy, 47, TH.line, 110, op)
     circle(cx, cy, 46, TH.bg, 111, op)
     if sel then
         txt(fit(sel.item.name, 86, FS - 1), cx, cy - 7,
             FS - 1, TH.text, 112, true, true, op)
         txt(sel.item.kind, cx, cy + 10, FS - 3, TH.sub, 112, true, false, op)
     else
-        txt("QUICK SWAP", cx, cy - 7, FS - 2, TH.text, 112, true, true, op)
-        txt("aim to select", cx, cy + 10, FS - 4, TH.mute, 112, true, false, op)
+        txt("STANCE", cx, cy - 10, FS - 3, TH.sub, 112, true, true, op)
+        txt("QUICK SWAP", cx, cy + 7, FS - 2, TH.text, 112, true, true, op)
     end
 end
 function renderOverlay()
@@ -2141,3 +2140,4 @@ end
 if catalogError then toast(catalogError, "bad")
 elseif engineError then toast("Animation engine unavailable: " .. engineError, "bad")
 else toast("Stance loaded: " .. tostring(#PACKS) .. " animation packs", "good") end
+print("[Stance Dev] Mono wheel v3 active")
