@@ -1,13 +1,13 @@
 local ROOT = "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/main/"
 local JSON_PATH = "SpooferConfig/MarketplaceResolved.json"
 local LUA_PATH = "Matcha_Animation_Changer.lua"
-local CACHE_PATH = "SpooferConfig/Stance_Script_Cache_r2.lua"
-local STANCE_RELEASE = "20261030-pagination-r2"
+local CACHE_PATH = "SpooferConfig/Stance_Script_Cache_Mono_r1.lua"
+local STANCE_RELEASE = "20261105-mono-main-r1"
 local JSON_RELEASE = "20261031-swimidle-complete-r3"
 local MIN_PACKS = 1052
 
 local function warning(message)
-    warn("[Stance] " .. message)
+    _G.StanceLoaderStatus = tostring(message)
 end
 
 if type(ROOT) ~= "string" or not ROOT:match("^https://raw%.githubusercontent%.com/[^/]+/[^/]+/[^/]+/$") then
@@ -40,9 +40,9 @@ local function readCached(path)
     return nil
 end
 local function validScript(body)
-    return type(body) == "string" and #body > 16000
-        and body:find("local MarketCore = {}", 1, true) ~= nil
-        and body:find("local function startStanceUI()", 1, true) ~= nil
+    return type(body) == "string" and #body > 60000
+        and body:find("local function drawWheel()", 1, true) ~= nil
+        and body:find("local function applyToGame(kind, payload)", 1, true) ~= nil
         and body:find('local STANCE_RELEASE = "' .. STANCE_RELEASE .. '"', 1, true) ~= nil
 end
 local function countValidPacks(body)
