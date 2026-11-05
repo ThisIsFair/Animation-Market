@@ -326,6 +326,8 @@ end
 local CAS_NAME = "StanceTypingSink"
 local casBound = false
 local casRetryAt = 0
+local casEvents = 0
+local casWarned = false
 local function casSet(on)
     if not on then
         if casBound then
@@ -333,112 +335,29 @@ local function casSet(on)
             casBound = false
         end
         casRetryAt = 0
+        casWarned = false
         return
     end
     if casBound or tick() < casRetryAt then return end
-    casRetryAt = tick() + 0.4
+    casRetryAt = tick() + 0.6
     local ok = pcall(function()
         local cas = game:GetService("ContextActionService")
         local K = Enum.KeyCode
-        cas:BindActionAtPriority(CAS_NAME, function() return Enum.ContextActionResult.Sink end,
-            false, 1000000, K.W, K.A, K.S, K.D, K.Space, K.Up, K.Down, K.Left, K.Right)
+        cas:BindActionAtPriority(CAS_NAME, function()
+            casEvents = casEvents + 1
+            return Enum.ContextActionResult.Sink
+        end, false, 1000000, K.W, K.A, K.S, K.D, K.Space, K.Up, K.Down, K.Left, K.Right)
     end)
     casBound = ok
 end
 local inputBlocked = false
-local inputRetries = 0
-local lastInputSet = 0
-local movementGuard = { character = nil, humanoid = nil, root = nil, defaults = {}, nextScan = 0, logged = false }
-local movementProperties = {"WalkSpeed", "JumpPower", "JumpHeight"}
-local function releaseMovementGuard()
-    if movementGuard.humanoid then
-        for prop, value in pairs(movementGuard.defaults) do
-            pcall(function() movementGuard.humanoid[prop] = value end)
-        end
-    end
-    movementGuard.character = nil
-    movementGuard.humanoid = nil
-    movementGuard.root = nil
-    movementGuard.defaults = {}
-    movementGuard.nextScan = 0
-end
-local function updateMovementGuard(want)
-    if not want then
-        if movementGuard.character or movementGuard.humanoid or movementGuard.root then releaseMovementGuard() end
-        movementGuard.logged = false
-        return
-    end
-    local now = tick()
-    if now >= movementGuard.nextScan then
-        movementGuard.nextScan = now + 0.2
-        local ok, char = pcall(function() return LocalPlayer.Character end)
-        if not ok then char = nil end
-        if char ~= movementGuard.character then
-            releaseMovementGuard()
-            movementGuard.character = char
-            movementGuard.nextScan = now + 0.2
-        end
-        if char then
-            local hum, root
-            pcall(function() hum = char:FindFirstChildOfClass("Humanoid") end)
-            pcall(function() root = char:FindFirstChild("HumanoidRootPart") end)
-            if hum ~= movementGuard.humanoid then
-                if movementGuard.humanoid then
-                    for prop, value in pairs(movementGuard.defaults) do
-                        pcall(function() movementGuard.humanoid[prop] = value end)
-                    end
-                end
-                movementGuard.defaults = {}
-                movementGuard.humanoid = hum
-                if hum then
-                    for _, prop in ipairs(movementProperties) do
-                        local readOk, original = pcall(function() return hum[prop] end)
-                        if readOk and type(original) == "number" then
-                            local writeOk = pcall(function() hum[prop] = 0 end)
-                            if writeOk then movementGuard.defaults[prop] = original end
-                        end
-                    end
-                end
-            end
-            movementGuard.root = root
-        end
-    end
-    local hum = movementGuard.humanoid
-    if hum then
-        for prop in pairs(movementGuard.defaults) do
-            pcall(function() hum[prop] = 0 end)
-        end
-        pcall(function() hum.Jump = false end)
-    end
-    local root = movementGuard.root
-    if root then
-        pcall(function()
-            local v = root.AssemblyLinearVelocity
-            if v and (math.abs(v.X) > 0.02 or math.abs(v.Z) > 0.02) then
-                root.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
-            end
-        end)
-    end
-    if not movementGuard.logged and movementGuard.character then
-        movementGuard.logged = true
-        warn("[Stance Dev] Text-field movement guard enabled; CAS bound=" .. tostring(casBound))
-    end
-end
 local function syncInput(force)
     local want = UI.visible and (UI.focus ~= nil or UI.binding ~= nil)
-    if want ~= inputBlocked then
+    if force or want ~= inputBlocked then
         inputBlocked = want
-        inputRetries = 4
-        force = true
-    end
-    local now = tick()
-    if force or inputRetries > 0 or (want and now - lastInputSet >= 0.2) then
-        pcall(setrobloxinput, not want)
-        lastInputSet = now
-        if inputRetries > 0 then inputRetries = inputRetries - 1 end
+        if type(setrobloxinput) == "function" then pcall(setrobloxinput, not want) end
     end
     casSet(want)
-    updateMovementGuard(want)
 end
 local function blur()
     UI.focus = nil
@@ -460,32 +379,110 @@ local SLOT_LABEL = {
     Fall = "Fall", Climb = "Climb", Swim = "Swim", SwimIdle = "Swim Idle",
 }
 local PACKS, PACK_BY_ID = {}, {}
-do
-    local names = {
-        "Smooth Operator", "Ghost Walk", "Neon Runner", "Midnight Stroll", "Skyward Bound",
-        "Liquid Motion", "Zero Gravity", "Street Style", "Phantom Step", "Crystal Wave",
-        "Shadow Dance", "Solar Flare", "Arctic Drift", "Ember Flow", "Cobalt Rush",
-        "Void Walker", "Prism Shift", "Echo Step", "Nova Glide", "Pulse Runner",
-        "Storm Dash", "Lunar Walk", "Apex Motion", "Drift King", "Static Flow",
-        "Zenith Run", "Cascade Step", "Flicker Walk", "Orbit Drift", "Haze Runner",
-    }
-    for i = 1, 80 do
-        local sc = (i % 5 == 0) and 7 or 8
-        local nm = names[(i - 1) % #names + 1]
-        if i > #names then nm = nm .. " " .. math.ceil(i / #names) end
-        local p = {
-            id = tostring(1000 + i), name = nm,
-            states = sc, maxStates = 8, anims = {},
-        }
-        for j, slot in ipairs(SLOTS) do
-            if sc == 8 or slot ~= "SwimIdle" then p.anims[slot] = tostring(2000000 + i * 100 + j) end
-        end
-        p._ln = p.name:lower()
-        PACKS[i] = p
-        PACK_BY_ID[p.id] = p
+local CATALOG_FILE = "SpooferConfig/MarketplaceResolved.json"
+local CATALOG_URL = "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/SpooferConfig/MarketplaceResolved.json"
+local ENGINE_URL = "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Animation_Engine.lua"
+local catalogError = nil
+local engineError = nil
+local engine = nil
+local function catalogRead(raw)
+    local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    if ok and type(data) == "table" and type(data.packs) == "table" then return data end
+    return nil
+end
+local catalogData = nil
+pcall(function()
+    if isfile(CATALOG_FILE) then catalogData = catalogRead(readfile(CATALOG_FILE)) end
+end)
+if not catalogData then
+    local ok, body = pcall(httpget, CATALOG_URL)
+    if ok and type(body) == "string" and #body > 0 then
+        catalogData = catalogRead(body)
+        if catalogData then pcall(function() writefile(CATALOG_FILE, body) end) end
     end
 end
+if catalogData then
+    for bundle, record in pairs(catalogData.packs) do
+        if type(record) == "table" and type(record.rows) == "table" then
+            local anims = {}
+            local count = 0
+            for _, row in ipairs(record.rows) do
+                if type(row) == "table" then
+                    local slot = tostring(row[1] or ""):lower():gsub("[^%a%d]", "")
+                    local id = tostring(row[3] or "")
+                    for _, name in ipairs(SLOTS) do
+                        if slot == name:lower() and id:match("^%d+$") then
+                            if anims[name] == nil then anims[name] = id; count = count + 1 end
+                            break
+                        end
+                    end
+                end
+            end
+            if count > 0 then
+                local id = tostring(record.bundleId or bundle)
+                local p = { id = id, name = tostring(record.name or record.menuName or ("Bundle " .. id)),
+                    states = count, maxStates = 8, anims = anims, rows = record.rows }
+                p._ln = p.name:lower()
+                PACKS[#PACKS + 1] = p
+                PACK_BY_ID[p.id] = p
+            end
+        end
+    end
+    table.sort(PACKS, function(a, b) if a._ln == b._ln then return a.id < b.id end return a._ln < b._ln end)
+else
+    catalogError = "Animation catalog unavailable; place MarketplaceResolved.json in SpooferConfig"
+end
+if type(_G.StanceEngineUnload) == "function" then pcall(_G.StanceEngineUnload) end
+if type(httpget) == "function" and type(loadstring) == "function" then
+    local ok, reason = pcall(function()
+        local body = httpget(ENGINE_URL)
+        assert(type(body) == "string" and #body > 1000, "Engine download failed")
+        loadstring(body)()
+        engine = _G.StanceAnimationEngine
+        assert(type(engine) == "table" and type(engine.ApplyRows) == "function", "Engine failed to initialize")
+    end)
+    if not ok then engineError = tostring(reason) end
+else
+    engineError = "Matcha HTTP/loadstring is unavailable"
+end
+local function invokeEngine(method, payload)
+    assert(engine and type(engine[method]) == "function", engineError or "Animation engine unavailable")
+    local ok, reason = engine[method](payload)
+    assert(ok, tostring(reason or "Animation engine rejected the operation"))
+    return true
+end
 local function applyToGame(kind, payload)
+    if kind == "pack" then
+        assert(type(payload) == "table" and type(payload.rows) == "table", "Pack mapping unavailable")
+        return invokeEngine("ApplyRows", payload.rows)
+    elseif kind == "mix" then
+        local states = {}
+        for slot, packId in pairs(payload or {}) do
+            local p = PACK_BY_ID[tostring(packId)]
+            if p and type(p.rows) == "table" then
+                local target = slot:lower()
+                local ids = {}
+                for _, row in ipairs(p.rows) do
+                    if type(row) == "table" and tostring(row[1]):lower() == target then
+                        ids[#ids + 1] = row[3]
+                    end
+                end
+                if #ids > 0 then states[target] = ids end
+            end
+        end
+        return invokeEngine("ApplyStateIds", states)
+    elseif kind == "restore" then
+        return invokeEngine("Restore")
+    elseif kind == "preview" then
+        if payload == nil then
+            return invokeEngine("StopPreview")
+        end
+        if type(payload) == "table" and payload.rows then
+            return invokeEngine("PreviewRows", payload.rows)
+        end
+        assert(false, "Direct animation ID playback is not supported in this preview")
+    end
+    assert(false, "Unknown animation operation")
 end
 local function missingOf(p)
     local m = {}
@@ -600,12 +597,14 @@ local function applyMix()
 end
 local function restoreDefaults()
     local before = currentSnap()
-    pcall(applyToGame, "restore", nil)
+    local ok, err = pcall(applyToGame, "restore", nil)
+    if not ok then toast("Restore failed: " .. tostring(err), "bad"); return false end
     State.equipped = nil
     State.appliedMix = nil
     if before.eq ~= nil then State.undo = before end
     markDirty()
     toast("Default animations restored", "info")
+    return true
 end
 local function reapply(silent)
     if State.equipped == nil then
@@ -2148,6 +2147,12 @@ local function step(dt)
     end
     if UI.delConfirm and tick() > UI.delConfirm.t then UI.delConfirm = nil end
     if UI.binding then captureBind() end
+    if UI.focus and not casWarned and rbxActive() and (iskeypressed(0x57) or iskeypressed(0x41) or iskeypressed(0x53) or iskeypressed(0x44)) then
+        if not casBound or casEvents == 0 then
+            casWarned = true
+            warn("[Stance Dev] Movement-key sinking is not confirmed by Matcha; physical keys may reach Roblox")
+        end
+    end
     watchRespawn()
     processHotkeys()
     handleKeys(dt)
@@ -2220,7 +2225,7 @@ _G.StanceUnload = function()
     end
     pcall(setrobloxinput, true)
     casSet(false)
-    releaseMovementGuard()
+    if type(_G.StanceEngineUnload) == "function" then pcall(_G.StanceEngineUnload) end
 end
 conn = RunService.Heartbeat:Connect(function(dt)
     if not alive then return end
@@ -2230,4 +2235,6 @@ conn = RunService.Heartbeat:Connect(function(dt)
         warn("[Stance] " .. tostring(err))
     end
 end)
-toast("Stance loaded - F4 toggles the window", "good")
+if catalogError then toast(catalogError, "bad")
+elseif engineError then toast("Animation engine unavailable: " .. engineError, "bad")
+else toast("Stance loaded: " .. tostring(#PACKS) .. " animation packs", "good") end
