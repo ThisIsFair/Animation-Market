@@ -1710,6 +1710,7 @@ local function buildWheelGeom(rings, cx, cy)
         local n = #ring.items
         local d = 2 * math.pi / n
         local rm = (ring.r0 + ring.r1) / 2
+        ring.step = d
         for i, it in ipairs(ring.items) do
             local angle = (i - 1) * d
             it.dirx, it.diry = math.sin(angle), -math.cos(angle)
@@ -1833,6 +1834,16 @@ local function drawWheel()
         circle(cx, cy, ring.r1, TH.ctl, z + 1, op)
         circle(cx, cy, ring.r0 + 1, TH.line, z + 2, op)
         circle(cx, cy, ring.r0, TH.bg, z + 3, op)
+    end
+    for _, ring in ipairs(rings) do
+        local d = ring.step or (2 * math.pi / math.max(1, #ring.items))
+        local r0 = ring.r0 + 2
+        local r1 = ring.r1 - 2
+        for i = 1, #ring.items do
+            local a = (i - 1) * d - d * 0.5
+            local sx, sy = math.sin(a), -math.cos(a)
+            line(cx + r0 * sx, cy + r0 * sy, cx + r1 * sx, cy + r1 * sy, 2, TH.lineHi, 104, op)
+        end
     end
     local sel = wheel.sel
     for _, ring in ipairs(rings) do
