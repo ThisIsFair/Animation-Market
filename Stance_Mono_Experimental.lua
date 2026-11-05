@@ -1819,21 +1819,23 @@ local function watchRespawn()
         end
     end
 end
+local WHEEL_BLACK = {0, 0, 0}
+local WHEEL_WHITE = WHITE
 local function drawWheel()
     wheelSelect()
     local cx, cy = wheel.cx, wheel.cy
     local rings = wheel.rings
     local R = rings[#rings].r1
     local op = 1 / State.opacity
-    circle(cx, cy, R + 16, TH.lineHi, 98, op)
-    circle(cx, cy, R + 14, TH.bg, 99, op)
+    circle(cx, cy, R + 16, WHEEL_WHITE, 98, op)
+    circle(cx, cy, R + 14, WHEEL_BLACK, 99, op)
     for j = #rings, 1, -1 do
         local ring = rings[j]
         local z = 100 + (#rings - j) * 2
-        circle(cx, cy, ring.r1 + 1, TH.line, z, op)
-        circle(cx, cy, ring.r1, TH.ctl, z + 1, op)
-        circle(cx, cy, ring.r0 + 1, TH.line, z + 2, op)
-        circle(cx, cy, ring.r0, TH.bg, z + 3, op)
+        circle(cx, cy, ring.r1 + 1, WHEEL_WHITE, z, op)
+        circle(cx, cy, ring.r1, WHEEL_BLACK, z + 1, op)
+        circle(cx, cy, ring.r0 + 1, WHEEL_WHITE, z + 2, op)
+        circle(cx, cy, ring.r0, WHEEL_BLACK, z + 3, op)
     end
     for _, ring in ipairs(rings) do
         local d = ring.step or (2 * math.pi / math.max(1, #ring.items))
@@ -1842,7 +1844,7 @@ local function drawWheel()
         for i = 1, #ring.items do
             local a = (i - 1) * d - d * 0.5
             local sx, sy = math.sin(a), -math.cos(a)
-            line(cx + r0 * sx, cy + r0 * sy, cx + r1 * sx, cy + r1 * sy, 2, TH.lineHi, 104, op)
+            line(cx + r0 * sx, cy + r0 * sy, cx + r1 * sx, cy + r1 * sy, 2, WHEEL_WHITE, 104, op)
         end
     end
     local sel = wheel.sel
@@ -1852,28 +1854,28 @@ local function drawWheel()
             local labelWidth = math.max(26, it.segW - 5)
             if selected then
                 rect(it.lx - labelWidth / 2 - 2, it.ly - 15, labelWidth + 4, 30,
-                    TH.lineHi, 105, 15, op, true)
+                    WHEEL_WHITE, 105, 15, op, true)
                 rect(it.lx - labelWidth / 2, it.ly - 13, labelWidth, 26,
-                    TH.accent, 106, 13, op, true)
+                    WHEEL_BLACK, 106, 13, op, true)
             end
             if it.segW >= 32 then
                 txt(fit(it.name, labelWidth - 8, FS - 2), it.lx, it.ly,
-                    FS - 2, selected and TH.onAccent or TH.text, 107, true, selected, op)
+                    FS - 2, WHEEL_WHITE, 107, true, selected, op)
             end
             if it.on then
-                rect(it.ex - 3, it.ey - 3, 6, 6, TH.good, 108, 3, op, true)
+                rect(it.ex - 3, it.ey - 3, 6, 6, WHEEL_WHITE, 108, 3, op, true)
             end
         end
     end
-    circle(cx, cy, 48, TH.lineHi, 110, op)
-    circle(cx, cy, 46, TH.card, 111, op)
+    circle(cx, cy, 48, WHEEL_WHITE, 110, op)
+    circle(cx, cy, 46, WHEEL_BLACK, 111, op)
     if sel then
         txt(fit(sel.item.name, 86, FS - 1), cx, cy - 7,
-            FS - 1, TH.text, 112, true, true, op)
-        txt(sel.item.kind, cx, cy + 10, FS - 3, TH.sub, 112, true, false, op)
+            FS - 1, WHEEL_WHITE, 112, true, true, op)
+        txt(sel.item.kind, cx, cy + 10, FS - 3, WHEEL_WHITE, 112, true, false, op)
     else
-        txt("QUICK SWAP", cx, cy - 7, FS - 2, TH.text, 112, true, true, op)
-        txt("aim to select", cx, cy + 10, FS - 4, TH.mute, 112, true, false, op)
+        txt("QUICK SWAP", cx, cy - 7, FS - 2, WHEEL_WHITE, 112, true, true, op)
+        txt("aim to select", cx, cy + 10, FS - 4, WHEEL_WHITE, 112, true, false, op)
     end
 end
 function renderOverlay()
