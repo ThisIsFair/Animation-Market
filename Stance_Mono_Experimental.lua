@@ -19,7 +19,7 @@ local function defaultState()
         theme = "Mono", accent = 0, scale = 1, opacity = 1, textSize = 14,
         compact = false, rounded = true,
         x = 120, y = 60, w = 900, h = 680,
-        favs = {}, presets = {}, recent = {}, mix = {}, mixLocks = {}, collections = {}, equipped = nil,
+        favs = {}, presets = {}, recent = {}, mix = {}, mixLocks = {}, equipped = nil,
         randSource = "all", autoReapply = true, wheelMode = "both", binds = {},
     }
 end
@@ -35,7 +35,7 @@ local function loadState()
     for k, v in pairs(d) do
         if State[k] == nil and k ~= "equipped" then State[k] = v end
     end
-    for _, k in ipairs({"favs", "presets", "recent", "mix", "mixLocks", "collections", "binds"}) do
+    for _, k in ipairs({"favs", "presets", "recent", "mix", "mixLocks", "binds"}) do
         if type(State[k]) ~= "table" then State[k] = {} end
     end
     State.w = math.max(MIN_W, tonumber(State.w) or d.w)
@@ -44,27 +44,8 @@ local function loadState()
     State.opacity = math.clamp(tonumber(State.opacity) or 1, 0.4, 1)
     State.textSize = math.clamp(tonumber(State.textSize) or 14, 11, 18)
     if State.wheelMode ~= "both" and State.wheelMode ~= "favs" and State.wheelMode ~= "presets" then State.wheelMode = "both" end
-    if State.randSource ~= "all" and State.randSource ~= "favorites" and State.randSource ~= "collection" then State.randSource = "all" end
-    local validCollections = {}
-    for _, col in ipairs(State.collections) do
-        if #validCollections < 30 and type(col) == "table" and type(col.id) == "string"
-            and type(col.name) == "string" and col.name ~= "" then
-            local ids, seen = {}, {}
-            if type(col.packs) == "table" then
-                for _, rawId in ipairs(col.packs) do
-                    local id = tostring(rawId)
-                    if id:match("^%d+$") and not seen[id] then
-                        ids[#ids + 1] = id
-                        seen[id] = true
-                    end
-                end
-            end
-            validCollections[#validCollections + 1] = {
-                id = col.id, name = col.name:sub(1, 32), packs = ids
-            }
-        end
-    end
-    State.collections = validCollections
+    if State.randSource ~= "all" and State.randSource ~= "favorites" then State.randSource = "all" end
+    State.collections = nil
 end
 loadState()
 local dirty, saveAt = false, 0
@@ -327,7 +308,6 @@ local UI = {
     visible = true, page = "Home",
     bSearch = "", bPage = 1, bSort = "name", bFilter = "all", bState = "All",
     fSearch = "", fPage = 1,
-    cName = "", cRename = "", cRenaming = false, cTarget = nil, cPage = 1, cListPage = 1, cVer = 0,
     mixSel = "Idle", mSearch = "", mPage = 1,
     pSearch = "", pName = "", pRename = "", pSel = nil, pRenaming = false, pPage = 1,
     delConfirm = nil, jump = "",
@@ -687,72 +667,6 @@ for _, p in ipairs(PACKS) do
         end
     end
 end
-function Extras.collection()
-    for _, col in ipairs(State.collections) do
-        if col.id == UI.cTarget then return col end
-    end
-    local col = State.collections[1]
-    UI.cTarget = col and col.id or nil
-    return col
-end
-function Extras.has(col, id)
-    if not col or type(col.packs) ~= "table" then return false end
-    for _, packId in ipairs(col.packs) do
-        if tostring(packId) == tostring(id) then return true end
-    end
-    return false
-end
-function Extras.togglePack(id)
-    local col = Extras.collection()
-    if not col then
-        UI.page = "Collections"
-        toast("Create a collection to organize packs", "info")
-        return
-    end
-    for i, packId in ipairs(col.packs) do
-        if tostring(packId) == tostring(id) then
-            table.remove(col.packs, i)
-            UI.cVer = UI.cVer + 1
-            markDirty()
-            toast("Removed from " .. col.name, "info")
-            return
-        end
-    end
-    col.packs[#col.packs + 1] = tostring(id)
-    UI.cVer = UI.cVer + 1
-    markDirty()
-    toast("Added to " .. col.name, "good")
-end
-function Extras.createCollection()
-    local name = UI.cName:gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 32)
-    if name == "" then toast("Name your collection first", "info"); return end
-    if #State.collections >= 30 then toast("Maximum 30 collections", "bad"); return end
-    for _, col in ipairs(State.collections) do
-        if col.name:lower() == name:lower() then
-            UI.cTarget = col.id
-            toast("Collection already exists", "info")
-            return
-        end
-    end
-    local col = { id = newId(), name = name, packs = {} }
-    State.collections[#State.collections + 1] = col
-    UI.cTarget, UI.cName, UI.cPage, UI.cListPage = col.id, "", 1, 1
-    UI.cVer = UI.cVer + 1
-    blur()
-    markDirty()
-    toast("Collection created", "good")
-end
-function Extras.cycleCollection()
-    if #State.collections == 0 then UI.page = "Collections"; toast("Create a collection first", "info"); return end
-    local current = Extras.collection()
-    local index = 1
-    for i, col in ipairs(State.collections) do
-        if col.id == current.id then index = i; break end
-    end
-    UI.cTarget = State.collections[index % #State.collections + 1].id
-    UI.cListPage = 1
-    UI.bPage = 1
-end
 function Extras.randomizeMix()
     local used = {}
     for _, slot in ipairs(SLOTS) do
@@ -762,11 +676,6 @@ function Extras.randomizeMix()
     if State.randSource == "favorites" then
         allowed = {}
         for _, id in ipairs(State.favs) do allowed[tostring(id)] = true end
-    elseif State.randSource == "collection" then
-        allowed = {}
-        local col = Extras.collection()
-        if not col then toast("Create a collection for this shuffle pool", "warn"); return end
-        for _, id in ipairs(col.packs) do allowed[tostring(id)] = true end
     end
     local changed, locked, skipped = 0, 0, 0
     for _, slot in ipairs(SLOTS) do
@@ -803,11 +712,10 @@ end
 local function getList(kind)
     local search = (kind == "b") and UI.bSearch or UI.fSearch
     local sort = (kind == "b") and UI.bSort or "saved"
-    local col = kind == "b" and Extras.collection() or nil
     local filter = kind == "b" and UI.bFilter or "all"
     local state = kind == "b" and UI.bState or "All"
     local key = search .. "|" .. sort .. "|" .. UI.favVer .. "|" .. UI.recentVer .. "|"
-        .. filter .. "|" .. state .. "|" .. UI.cVer .. "|" .. tostring(col and col.id or "")
+        .. filter .. "|" .. state
     local c = UI.caches[kind]
     if c and c.key == key then return c.list end
     local s = search:lower()
@@ -821,11 +729,10 @@ local function getList(kind)
             if p then src[#src + 1] = p end
         end
     end
-    local favorites, recent, inCollection = {}, {}, {}
+    local favorites, recent = {}, {}
     if kind == "b" then
         for _, id in ipairs(State.favs) do favorites[tostring(id)] = true end
         for _, id in ipairs(State.recent) do recent[tostring(id)] = true end
-        if col then for _, id in ipairs(col.packs) do inCollection[tostring(id)] = true end end
     end
     local list = {}
     for _, p in ipairs(src) do
@@ -836,7 +743,6 @@ local function getList(kind)
                 or (filter == "partial" and p.states < #SLOTS)
                 or (filter == "favorites" and favorites[p.id])
                 or (filter == "recent" and recent[p.id])
-                or (filter == "collection" and inCollection[p.id])
             if eligible then list[#list + 1] = p end
         end
     end
@@ -909,9 +815,6 @@ local function icon(name, cx, cy, col, z)
         ln(-10, 0, 0, 5); ln(0, 5, 10, 0); ln(-10, 5, 0, 10); ln(0, 10, 10, 5)
     elseif name == "bookmark" then
         ln(-6, -9, 6, -9); ln(-6, -9, -6, 9); ln(6, -9, 6, 9); ln(-6, 9, 0, 4); ln(0, 4, 6, 9)
-    elseif name == "folder" then
-        ln(-10, -6, -2, -6); ln(-2, -6, 1, -3); ln(1, -3, 10, -3)
-        ln(-10, -6, -10, 8); ln(-10, 8, 10, 8); ln(10, 8, 10, -3)
     elseif name == "keys" then
         ln(-10, -6, 10, -6); ln(10, -6, 10, 6); ln(10, 6, -10, 6); ln(-10, 6, -10, -6)
         dot(-5, -2, 1.3); dot(0, -2, 1.3); dot(5, -2, 1.3); ln(-5, 3, 5, 3)
@@ -1060,24 +963,20 @@ local function renderPackList(x, y, w, h, kind)
             UI.bSort, function(k) UI.bSort = k; UI.bPage = 1 end, 20, "sort")
     end
     if isB then
-        local filterW = math.max(340, w - 250)
+        local filterW = w - 130
         segmented(x, y + 42, filterW, 30,
             { {"all", "All"}, {"complete", "8/8"}, {"partial", "Partial"},
-              {"favorites", "Saved"}, {"recent", "Recent"}, {"collection", "Folder"} },
+              {"favorites", "Saved"}, {"recent", "Recent"} },
             UI.bFilter, function(k) UI.bFilter = k; UI.bPage = 1 end, 20, "bf")
         local sx = x + filterW + 8
-        button(sx, y + 42, 108, 30, "State: " .. (UI.bState == "All" and "All" or SLOT_LABEL[UI.bState]),
+        button(sx, y + 42, w - filterW - 8, 30,
+            fit("State: " .. (UI.bState == "All" and "All" or SLOT_LABEL[UI.bState]), w - filterW - 20, FS - 2),
             "bstate", function()
                 local index = 0
                 for i, slot in ipairs(SLOTS) do if slot == UI.bState then index = i; break end end
                 UI.bState = SLOTS[index + 1] or "All"
                 UI.bPage = 1
             end, "soft", 20, "Cycle available animation states", FS - 2)
-        local col = Extras.collection()
-        button(sx + 116, y + 42, w - filterW - 124, 30,
-            fit(col and ("To: " .. col.name) or "New collection", w - filterW - 136, FS - 2),
-            "btarget", Extras.cycleCollection, "soft", 20,
-            "Click to choose the collection used by Add", FS - 2)
     end
     local top = y + (isB and 82 or (tb + 10))
     local footH = 28
@@ -1117,16 +1016,8 @@ local function renderPackList(x, y, w, h, kind)
             local added = toggleFav(p.id)
             toast(added and "Saved to Favorites" or "Removed from Favorites", "info")
         end, fav and "accent" or "soft", 20)
-        local addX = saveX - 6 - 38
-        if isB then
-            local col = Extras.collection()
-            local inCol = Extras.has(col, p.id)
-            button(addX, cy - 14, 38, 28, inCol and "-" or "+", "cadd" .. p.id,
-                function() Extras.togglePack(p.id) end, inCol and "accent" or "soft", 20,
-                col and ((inCol and "Remove from " or "Add to ") .. col.name) or "Create a collection", FS - 1)
-        end
         local badgeW = 44
-        local badgeX = (isB and (addX - 10 - badgeW) or (saveX - 10 - badgeW))
+        local badgeX = saveX - 10 - badgeW
         local full = p.states == p.maxStates
         pill(badgeX, cy - 10, badgeW, 20, TH.line, TH.bg, 14)
         txt(p.states .. "/" .. p.maxStates, badgeX + badgeW / 2, cy, FS - 2, full and TH.sub or TH.warn, 17, true)
@@ -1147,114 +1038,6 @@ local function renderPackList(x, y, w, h, kind)
         end
     end
     footer(x, y + h - footH, w, pageKey, pages, total, total > 0 and (i0 + 1) or 0, math.min(i0 + per, total), kind, true)
-end
-local function renderCollections(x, y, w, h)
-    local createW = 152
-    input(x, y, w - createW - 8, 32, UI, "cName", "cname", "Name a new collection", 20, nil, Extras.createCollection)
-    button(x + w - createW, y, createW, 32, "Create collection", "ccreate", Extras.createCollection,
-        "primary", 20)
-    local top, bodyH = y + 44, h - 44
-    local lw = math.max(220, math.floor(w * 0.43))
-    local gap, rowH, footH = 6, 40, 28
-    local per = math.max(1, math.floor((bodyH - footH - 10 + gap) / (rowH + gap)))
-    local pages = math.max(1, math.ceil(#State.collections / per))
-    UI.cPage = math.clamp(UI.cPage, 1, pages)
-    local i0 = (UI.cPage - 1) * per
-    local selected = Extras.collection()
-    for k = 1, per do
-        local col = State.collections[i0 + k]
-        if not col then break end
-        local ry = top + (k - 1) * (rowH + gap)
-        local on = selected and selected.id == col.id
-        card(x, ry, lw, rowH, 16, 10, on and "sel" or (hit(x, ry, lw, rowH) and "hov" or nil))
-        txt(fit(col.name, lw - 85, FS), x + 14, ry + rowH / 2, FS, TH.text, 14)
-        txt(tostring(#col.packs), x + lw - 26, ry + rowH / 2, FS - 2, TH.sub, 14, true)
-        reg(x, ry, lw, rowH, "col" .. col.id, function()
-            UI.cTarget, UI.cRenaming, UI.cListPage = col.id, false, 1
-            UI.bPage = 1
-        end)
-    end
-    if #State.collections == 0 then
-        emptyState(x, top, lw, bodyH - footH, "No collections yet", "Create one above, then add packs in Browse.")
-    end
-    if pages > 1 then
-        footer(x, top + bodyH - footH, lw, "cPage", pages, #State.collections,
-            i0 + 1, math.min(i0 + per, #State.collections), "col", false)
-    end
-    local px, pw = x + lw + 12, w - lw - 12
-    card(px, top, pw, bodyH, 22, 10)
-    if not selected then
-        emptyState(px, top, pw, bodyH, "Choose a collection", "Your saved packs appear here.")
-        return
-    end
-    local ix, iw = px + 14, pw - 28
-    if UI.cRenaming then
-        input(ix, top + 12, iw, 30, UI, "cRename", "crename", "Collection name", 20)
-    else
-        txt(fit(selected.name, iw, FS + 2), ix, top + 29, FS + 2, TH.text, 14, false, true)
-    end
-    local bw, rowY = math.floor((iw - 12) / 3), top + 54
-    if UI.cRenaming then
-        button(ix, rowY, bw, 28, "Save name", "crsave", function()
-            local name = UI.cRename:gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 32)
-            if name ~= "" then selected.name = name; markDirty(); UI.cVer = UI.cVer + 1 end
-            UI.cRenaming = false; blur()
-        end, "primary", 20)
-        button(ix + bw + 6, rowY, bw, 28, "Cancel", "crcancel", function()
-            UI.cRenaming = false; blur()
-        end, "soft", 20)
-    else
-        button(ix, rowY, bw, 28, "Browse", "cbrowse", function()
-            UI.page = "Browse"; UI.bFilter = "all"; UI.bPage = 1
-        end, "primary", 20, "Browse all packs and add them with +")
-        button(ix + bw + 6, rowY, bw, 28, "Rename", "crenamebtn", function()
-            UI.cRenaming = true; UI.cRename = selected.name; focusInput("crename")
-        end, "soft", 20)
-    end
-    local confirming = UI.delConfirm and UI.delConfirm.id == "col" .. selected.id and tick() < UI.delConfirm.t
-    button(ix + (bw + 6) * 2, rowY, bw, 28, confirming and "Confirm" or "Delete", "cdelete", function()
-        if confirming then
-            for i, col in ipairs(State.collections) do
-                if col.id == selected.id then table.remove(State.collections, i); break end
-            end
-            UI.cTarget = State.collections[1] and State.collections[1].id or nil
-            UI.cPage, UI.cListPage, UI.cRenaming = 1, 1, false
-            UI.delConfirm = nil; UI.cVer = UI.cVer + 1
-            markDirty(); toast("Collection deleted", "info")
-        else
-            UI.delConfirm = { id = "col" .. selected.id, t = tick() + 3 }
-        end
-    end, confirming and "dangerSolid" or "danger", 20)
-    local ltop, lbottom = top + 94, top + bodyH - footH - 8
-    local list = {}
-    for _, id in ipairs(selected.packs) do
-        local p = PACK_BY_ID[tostring(id)]
-        if p then list[#list + 1] = p end
-    end
-    local rh, g = 32, 4
-    local count = math.max(1, math.floor((lbottom - ltop + g) / (rh + g)))
-    local pg = math.max(1, math.ceil(#list / count))
-    UI.cListPage = math.clamp(UI.cListPage, 1, pg)
-    local first = (UI.cListPage - 1) * count
-    for k = 1, count do
-        local p = list[first + k]
-        if not p then break end
-        local ry = ltop + (k - 1) * (rh + g)
-        rect(ix, ry, iw, rh, hit(ix, ry, iw, rh) and TH.ctl or TH.rowIn, 12, 9)
-        local wearX = ix + iw - 90
-        txt(fit(p.name, wearX - ix - 14, FS - 1), ix + 10, ry + rh / 2, FS - 1, TH.text, 14)
-        button(wearX, ry + 3, 46, 26, "Wear", "cwear" .. p.id, function() equipPack(p) end,
-            "soft", 20, nil, FS - 2)
-        button(wearX + 50, ry + 3, 34, 26, "x", "cremove" .. p.id,
-            function() Extras.togglePack(p.id) end, "ghost", 20, "Remove from collection", FS - 2)
-    end
-    if #list == 0 then
-        emptyState(px, ltop, pw, lbottom - ltop, "Collection is empty", "Browse all packs and use + to add them.")
-    end
-    if pg > 1 then
-        footer(ix, top + bodyH - footH, iw, "cListPage", pg, #list,
-            first + 1, math.min(first + count, #list), "cip", false)
-    end
 end
 local function renderMix(x, y, w, h)
     local n = mixCount()
@@ -1308,13 +1091,10 @@ local function renderMix(x, y, w, h)
     card(px, top, pw, bodyH, 22, 10)
     txt("Choose " .. SLOT_LABEL[UI.mixSel], px + 16, top + 20, FS, TH.text, 14, false, true)
     button(px + pw - 130, top + 5, 114, 26,
-        State.randSource == "favorites" and "Pool: Saved" or
-        (State.randSource == "collection" and "Pool: Folder" or "Pool: All"), "randompool", function()
-            if State.randSource == "all" then State.randSource = "favorites"
-            elseif State.randSource == "favorites" then State.randSource = "collection"
-            else State.randSource = "all" end
+        State.randSource == "favorites" and "Pool: Saved" or "Pool: All", "randompool", function()
+            State.randSource = State.randSource == "all" and "favorites" or "all"
             markDirty()
-        end, "soft", 20, "Randomizer source; click to cycle", FS - 2)
+        end, "soft", 20, "Randomizer source; click to switch between all packs and favorites", FS - 2)
     input(px + 12, top + 38, pw - 24, 30, UI, "mSearch", "msearch", "Search compatible packs", 20,
         function() UI.mPage = 1 end)
     local ltop = top + 78
@@ -1614,22 +1394,21 @@ local function renderAppearance(x, y, w, h)
 end
 local PAGES = {
     { "Home", "Home" }, { "Browse", "Browse" }, { "Favorites", "Favorites" }, { "MixMatch", "Mix" },
-    { "Presets", "Presets" }, { "Collections", "Folders" }, { "Controls", "Controls" },
+    { "Presets", "Presets" }, { "Controls", "Controls" },
 }
 local PAGE_TITLE = { Home = "Your workspace", Browse = "Browse", Favorites = "Favorites", MixMatch = "Mix & Match",
-    Presets = "Presets", Collections = "Collections", Controls = "Controls", Appearance = "Settings" }
+    Presets = "Presets", Controls = "Controls", Appearance = "Settings" }
 local PAGE_SUB = {
     Home = "A clear view of your setup. Pick an animation, fine-tune it, swap fast.",
     Browse = "Browse real animation packs. Select Wear to equip one.",
     Favorites = "Your saved packs, one click away.",
     MixMatch = "Mix and match animations for each movement state.",
     Presets = "Save a mix and switch back to it any time.",
-    Collections = "Organize packs into your own folders.",
     Controls = "Hotkeys, the swap wheel and respawn behavior.",
     Appearance = "Theme, text size and layout.",
 }
 local PAGE_ICON = { Home = "home", Browse = "list", Favorites = "star", MixMatch = "layers",
-    Presets = "bookmark", Collections = "folder", Controls = "keys", Appearance = "sliders" }
+    Presets = "bookmark", Controls = "keys", Appearance = "sliders" }
 local SB_X, SB_W = 14, 78
 local PANEL_X = SB_X + SB_W + 10
 local CX = PANEL_X + 26
@@ -1672,11 +1451,11 @@ local function renderHome(x, y, w, h)
     card(x, py, w, ph, 22, 10)
     txt("Your library", x + 22, py + 28, FS + 1, TH.text, 14, false, true)
     txt(tostring(#PACKS) .. " packs  |  " .. tostring(#State.favs) .. " favorites  |  "
-        .. tostring(#State.presets) .. " presets  |  " .. tostring(#State.collections) .. " collections",
+        .. tostring(#State.presets) .. " presets",
         x + 22, py + 50, FS - 2, TH.sub, 14)
     button(x + 20, py + 66, 140, 30, "Browse packs", "quickbrowse", function() UI.page = "Browse" end, "primary", 20)
     button(x + 168, py + 66, 124, 30, "Favorites", "quickfav", function() UI.page = "Favorites" end, "soft", 20)
-    button(x + 300, py + 66, 138, 30, "Collections", "quickcol", function() UI.page = "Collections" end, "soft", 20)
+    button(x + 300, py + 66, 138, 30, "Mix & Match", "quickmix", function() UI.page = "MixMatch" end, "soft", 20)
     local recentY = py + 112
     if #State.recent > 0 and recentY + 30 < py + ph then
         txt("RECENTLY EQUIPPED", x + 22, recentY, FS - 3, TH.mute, 14, false, true)
@@ -1717,8 +1496,7 @@ local function renderWindow()
             UI.page = key; UI.jump = ""; UI.binding = nil; blur()
         end)
     end
-    local navGap = math.min(72, math.max(52, (H - 210) / 6))
-    for i, pg in ipairs(PAGES) do nav(pg[1], pg[2], 66 + (i - 1) * navGap) end
+    for i, pg in ipairs(PAGES) do nav(pg[1], pg[2], 66 + (i - 1) * 72) end
     nav("Appearance", "Settings", H - 14 - 58)
     local hy = 46
     local rE = CX + cw
@@ -1746,7 +1524,6 @@ local function renderWindow()
     elseif UI.page == "Favorites"  then renderPackList(CX, CT, cw, ch, "f")
     elseif UI.page == "MixMatch"   then renderMix(CX, CT, cw, ch)
     elseif UI.page == "Presets"    then renderPresets(CX, CT, cw, ch)
-    elseif UI.page == "Collections" then renderCollections(CX, CT, cw, ch)
     elseif UI.page == "Controls"   then renderControls(CX, CT, cw, ch)
     elseif UI.page == "Appearance" then renderAppearance(CX, CT, cw, ch)
     end
