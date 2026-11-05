@@ -1,4 +1,4 @@
-local STANCE_RELEASE = "20261105-mono-main-r1"
+local STANCE_RELEASE = "20261105-mono-main-r2"
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
@@ -20,8 +20,8 @@ local function defaultState()
         theme = "Mono", accent = 0, scale = 1, opacity = 1, textSize = 14,
         compact = false, rounded = true,
         x = 120, y = 60, w = 900, h = 680,
-        favs = {}, presets = {}, recent = {}, mix = {}, equipped = nil,
-        autoReapply = true, wheelMode = "both", binds = {},
+        favs = {}, presets = {}, recent = {}, mix = {}, mixLocks = {}, equipped = nil,
+        randSource = "all", autoReapply = true, wheelMode = "both", binds = {},
     }
 end
 local State = defaultState()
@@ -36,7 +36,7 @@ local function loadState()
     for k, v in pairs(d) do
         if State[k] == nil and k ~= "equipped" then State[k] = v end
     end
-    for _, k in ipairs({"favs", "presets", "recent", "mix", "binds"}) do
+    for _, k in ipairs({"favs", "presets", "recent", "mix", "mixLocks", "binds"}) do
         if type(State[k]) ~= "table" then State[k] = {} end
     end
     State.w = math.max(MIN_W, tonumber(State.w) or d.w)
@@ -45,6 +45,8 @@ local function loadState()
     State.opacity = math.clamp(tonumber(State.opacity) or 1, 0.4, 1)
     State.textSize = math.clamp(tonumber(State.textSize) or 14, 11, 18)
     if State.wheelMode ~= "both" and State.wheelMode ~= "favs" and State.wheelMode ~= "presets" then State.wheelMode = "both" end
+    if State.randSource ~= "all" and State.randSource ~= "favorites" then State.randSource = "all" end
+    State.collections = nil
 end
 loadState()
 local dirty, saveAt = false, 0
@@ -305,7 +307,7 @@ end
 local Mouse = { x = 0, y = 0, lx = 0, ly = 0, down = false, clicked = false }
 local UI = {
     visible = true, page = "Home",
-    bSearch = "", bPage = 1, bSort = "name",
+    bSearch = "", bPage = 1, bSort = "name", bFilter = "all", bState = "All",
     fSearch = "", fPage = 1,
     mixSel = "Idle", mSearch = "", mPage = 1,
     pSearch = "", pName = "", pRename = "", pSel = nil, pRenaming = false, pPage = 1,
@@ -654,10 +656,65 @@ local function cycleFavorite(dir)
     else nxt = ((idx - 1 + dir) % #list) + 1 end
     equipPack(list[nxt])
 end
+local Extras = { candidates = {} }
+for _, slot in ipairs(SLOTS) do Extras.candidates[slot] = {} end
+for _, p in ipairs(PACKS) do
+    for _, slot in ipairs(SLOTS) do
+        if p.anims[slot] then
+            local list = Extras.candidates[slot]
+            list[#list + 1] = p
+        end
+    end
+end
+function Extras.randomizeMix()
+    local used = {}
+    for _, slot in ipairs(SLOTS) do
+        if State.mixLocks[slot] and State.mix[slot] then used[State.mix[slot]] = true end
+    end
+    local allowed = nil
+    if State.randSource == "favorites" then
+        allowed = {}
+        for _, id in ipairs(State.favs) do allowed[tostring(id)] = true end
+    end
+    local changed, locked, skipped = 0, 0, 0
+    for _, slot in ipairs(SLOTS) do
+        if State.mixLocks[slot] then
+            locked = locked + 1
+        else
+            local pool = Extras.candidates[slot]
+            local candidates = {}
+            for _, p in ipairs(pool) do
+                if allowed == nil or allowed[p.id] then candidates[#candidates + 1] = p.id end
+            end
+            if #candidates == 0 then
+                skipped = skipped + 1
+            else
+                local pick = candidates[math.random(#candidates)]
+                for _ = 1, math.min(24, #candidates * 3) do
+                    local candidate = candidates[math.random(#candidates)]
+                    if not used[candidate] and candidate ~= State.mix[slot] then
+                        pick = candidate
+                        break
+                    end
+                end
+                State.mix[slot] = pick
+                used[pick] = true
+                changed = changed + 1
+            end
+        end
+    end
+    if changed > 0 then markDirty() end
+    local msg = "Shuffled " .. changed .. " states, kept " .. locked .. " locked"
+    if skipped > 0 then msg = msg .. ", " .. skipped .. " unavailable" end
+    toast(msg, skipped > 0 and "warn" or "good")
+end
 local function getList(kind)
     local search = (kind == "b") and UI.bSearch or UI.fSearch
     local sort = (kind == "b") and UI.bSort or "saved"
-    local key = search .. "|" .. sort .. "|" .. UI.favVer .. "|" .. UI.recentVer
+    local filter = kind == "b" and UI.bFilter or "all"
+    local state = kind == "b" and UI.bState or "All"
+    local key = search .. "|" .. sort .. "|" .. UI.favVer .. "|" .. UI.recentVer .. "|"
+        .. filter .. "|" .. state
     local c = UI.caches[kind]
     if c and c.key == key then return c.list end
     local s = search:lower()
@@ -671,9 +728,22 @@ local function getList(kind)
             if p then src[#src + 1] = p end
         end
     end
+    local favorites, recent = {}, {}
+    if kind == "b" then
+        for _, id in ipairs(State.favs) do favorites[tostring(id)] = true end
+        for _, id in ipairs(State.recent) do recent[tostring(id)] = true end
+    end
     local list = {}
     for _, p in ipairs(src) do
-        if s == "" or p._ln:find(s, 1, true) then list[#list + 1] = p end
+        local matches = s == "" or p._ln:find(s, 1, true) or p.id:find(s, 1, true)
+        if matches and (state == "All" or p.anims[state]) then
+            local eligible = filter == "all"
+                or (filter == "complete" and p.states == #SLOTS)
+                or (filter == "partial" and p.states < #SLOTS)
+                or (filter == "favorites" and favorites[p.id])
+                or (filter == "recent" and recent[p.id])
+            if eligible then list[#list + 1] = p end
+        end
     end
     if sort == "name" then
         table.sort(list, function(a, b) if a._ln == b._ln then return a.id < b.id end return a._ln < b._ln end)
@@ -891,7 +961,23 @@ local function renderPackList(x, y, w, h, kind)
         segmented(x + sw + 8, y, sortW, tb, { {"name", "Name"}, {"recent", "Recent"} },
             UI.bSort, function(k) UI.bSort = k; UI.bPage = 1 end, 20, "sort")
     end
-    local top = y + tb + 10
+    if isB then
+        local filterW = w - 130
+        segmented(x, y + 42, filterW, 30,
+            { {"all", "All"}, {"complete", "8/8"}, {"partial", "Partial"},
+              {"favorites", "Saved"}, {"recent", "Recent"} },
+            UI.bFilter, function(k) UI.bFilter = k; UI.bPage = 1 end, 20, "bf")
+        local sx = x + filterW + 8
+        button(sx, y + 42, w - filterW - 8, 30,
+            fit("State: " .. (UI.bState == "All" and "All" or SLOT_LABEL[UI.bState]), w - filterW - 20, FS - 2),
+            "bstate", function()
+                local index = 0
+                for i, slot in ipairs(SLOTS) do if slot == UI.bState then index = i; break end end
+                UI.bState = SLOTS[index + 1] or "All"
+                UI.bPage = 1
+            end, "soft", 20, "Cycle available animation states", FS - 2)
+    end
+    local top = y + (isB and 82 or (tb + 10))
     local footH = 28
     local bottom = y + h - footH - 10
     local rowH = State.compact and 34 or 42
@@ -943,7 +1029,7 @@ local function renderPackList(x, y, w, h, kind)
     end
     if total == 0 then
         if isB then
-            emptyState(x, top, w, bottom - top, "No packs found", "Try a different name.")
+            emptyState(x, top, w, bottom - top, "No packs found", "Change search, state, or filter.")
         elseif UI.fSearch ~= "" then
             emptyState(x, top, w, bottom - top, "No favorites match", "Try a different search.")
         else
@@ -954,9 +1040,12 @@ local function renderPackList(x, y, w, h, kind)
 end
 local function renderMix(x, y, w, h)
     local n = mixCount()
-    txt(n .. "/8 states assigned", x + 2, y + 16, FS, TH.sub, 14)
+    txt(n .. (w < 690 and "/8 set" or "/8 states assigned"), x + 2, y + 16, FS, TH.sub, 14)
     local bx = x + w
     bx = bx - 100; button(bx, y, 100, 32, "Apply mix", "apply", applyMix, "primary", 20)
+    bx = bx - 8 - 112
+    button(bx, y, 112, 32, "Randomize", "randomize", Extras.randomizeMix, "soft", 20,
+        "Shuffle unlocked states, then Apply or Save")
     local sw2 = btnW("Save as preset")
     bx = bx - 8 - sw2
     button(bx, y, sw2, 32, "Save as preset", "tosave", function()
@@ -970,7 +1059,7 @@ local function renderMix(x, y, w, h)
     local top = y + 44
     local bodyH = h - 44
     local gap = 6
-    local lw = math.max(250, math.floor(w * 0.44))
+    local lw = math.max(276, math.floor(w * 0.48))
     local rh = math.max(30, math.min(42, math.floor((bodyH - 7 * gap) / 8)))
     for i, slot in ipairs(SLOTS) do
         local ry = top + (i - 1) * (rh + gap)
@@ -981,9 +1070,16 @@ local function renderMix(x, y, w, h)
         local p = pid and PACK_BY_ID[pid]
         local cy = ry + rh / 2
         txt(SLOT_LABEL[slot], x + 14, cy, FS - 1, sel and TH.text or TH.sub, 14, false, true)
-        local maxW = lw - 96 - 14 - (p and 30 or 0)
+        local maxW = lw - 96 - 14 - 104
         txt(p and fit(p.name, maxW, FS - 1) or "Not set", x + 96, cy, FS - 1, p and TH.text or TH.mute, 14)
         reg(x, ry, lw, rh, "slot" .. slot, function() UI.mixSel = slot; UI.mSearch = ""; UI.mPage = 1 end)
+        local locked = State.mixLocks[slot] == true
+        button(x + lw - 100, cy - 11, 60, 22, locked and "Locked" or "Lock", "lock" .. slot,
+            function()
+                State.mixLocks[slot] = not locked
+                markDirty()
+            end, locked and "accent" or "ghost", 20,
+            locked and "Keep this state when randomizing" or "Exclude this state from randomizing", FS - 2)
         if p then
             button(x + lw - 32, cy - 11, 24, 22, "x", "clr" .. slot, function()
                 State.mix[slot] = nil; markDirty()
@@ -993,6 +1089,11 @@ local function renderMix(x, y, w, h)
     local px, pw = x + lw + 12, w - lw - 12
     card(px, top, pw, bodyH, 22, 10)
     txt("Choose " .. SLOT_LABEL[UI.mixSel], px + 16, top + 20, FS, TH.text, 14, false, true)
+    button(px + pw - 130, top + 5, 114, 26,
+        State.randSource == "favorites" and "Pool: Saved" or "Pool: All", "randompool", function()
+            State.randSource = State.randSource == "all" and "favorites" or "all"
+            markDirty()
+        end, "soft", 20, "Randomizer source; click to switch between all packs and favorites", FS - 2)
     input(px + 12, top + 38, pw - 24, 30, UI, "mSearch", "msearch", "Search compatible packs", 20,
         function() UI.mPage = 1 end)
     local ltop = top + 78
@@ -1348,10 +1449,12 @@ local function renderHome(x, y, w, h)
     local ph = h - cardH - gap
     card(x, py, w, ph, 22, 10)
     txt("Your library", x + 22, py + 28, FS + 1, TH.text, 14, false, true)
-    txt(tostring(#PACKS) .. " animation packs  |  " .. tostring(#State.favs) .. " favorites  |  "
-        .. tostring(#State.presets) .. " presets", x + 22, py + 50, FS - 2, TH.sub, 14)
+    txt(tostring(#PACKS) .. " packs  |  " .. tostring(#State.favs) .. " favorites  |  "
+        .. tostring(#State.presets) .. " presets",
+        x + 22, py + 50, FS - 2, TH.sub, 14)
     button(x + 20, py + 66, 140, 30, "Browse packs", "quickbrowse", function() UI.page = "Browse" end, "primary", 20)
     button(x + 168, py + 66, 124, 30, "Favorites", "quickfav", function() UI.page = "Favorites" end, "soft", 20)
+    button(x + 300, py + 66, 138, 30, "Mix & Match", "quickmix", function() UI.page = "MixMatch" end, "soft", 20)
     local recentY = py + 112
     if #State.recent > 0 and recentY + 30 < py + ph then
         txt("RECENTLY EQUIPPED", x + 22, recentY, FS - 3, TH.mute, 14, false, true)
