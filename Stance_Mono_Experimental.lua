@@ -909,6 +909,9 @@ local function icon(name, cx, cy, col, z)
         ln(-10, 0, 0, 5); ln(0, 5, 10, 0); ln(-10, 5, 0, 10); ln(0, 10, 10, 5)
     elseif name == "bookmark" then
         ln(-6, -9, 6, -9); ln(-6, -9, -6, 9); ln(6, -9, 6, 9); ln(-6, 9, 0, 4); ln(0, 4, 6, 9)
+    elseif name == "folder" then
+        ln(-10, -6, -2, -6); ln(-2, -6, 1, -3); ln(1, -3, 10, -3)
+        ln(-10, -6, -10, 8); ln(-10, 8, 10, 8); ln(10, 8, 10, -3)
     elseif name == "keys" then
         ln(-10, -6, 10, -6); ln(10, -6, 10, 6); ln(10, 6, -10, 6); ln(-10, 6, -10, -6)
         dot(-5, -2, 1.3); dot(0, -2, 1.3); dot(5, -2, 1.3); ln(-5, 3, 5, 3)
@@ -1144,6 +1147,114 @@ local function renderPackList(x, y, w, h, kind)
         end
     end
     footer(x, y + h - footH, w, pageKey, pages, total, total > 0 and (i0 + 1) or 0, math.min(i0 + per, total), kind, true)
+end
+local function renderCollections(x, y, w, h)
+    local createW = 152
+    input(x, y, w - createW - 8, 32, UI, "cName", "cname", "Name a new collection", 20, nil, Extras.createCollection)
+    button(x + w - createW, y, createW, 32, "Create collection", "ccreate", Extras.createCollection,
+        "primary", 20)
+    local top, bodyH = y + 44, h - 44
+    local lw = math.max(220, math.floor(w * 0.43))
+    local gap, rowH, footH = 6, 40, 28
+    local per = math.max(1, math.floor((bodyH - footH - 10 + gap) / (rowH + gap)))
+    local pages = math.max(1, math.ceil(#State.collections / per))
+    UI.cPage = math.clamp(UI.cPage, 1, pages)
+    local i0 = (UI.cPage - 1) * per
+    local selected = Extras.collection()
+    for k = 1, per do
+        local col = State.collections[i0 + k]
+        if not col then break end
+        local ry = top + (k - 1) * (rowH + gap)
+        local on = selected and selected.id == col.id
+        card(x, ry, lw, rowH, 16, 10, on and "sel" or (hit(x, ry, lw, rowH) and "hov" or nil))
+        txt(fit(col.name, lw - 85, FS), x + 14, ry + rowH / 2, FS, TH.text, 14)
+        txt(tostring(#col.packs), x + lw - 26, ry + rowH / 2, FS - 2, TH.sub, 14, true)
+        reg(x, ry, lw, rowH, "col" .. col.id, function()
+            UI.cTarget, UI.cRenaming, UI.cListPage = col.id, false, 1
+            UI.bPage = 1
+        end)
+    end
+    if #State.collections == 0 then
+        emptyState(x, top, lw, bodyH - footH, "No collections yet", "Create one above, then add packs in Browse.")
+    end
+    if pages > 1 then
+        footer(x, top + bodyH - footH, lw, "cPage", pages, #State.collections,
+            i0 + 1, math.min(i0 + per, #State.collections), "col", false)
+    end
+    local px, pw = x + lw + 12, w - lw - 12
+    card(px, top, pw, bodyH, 22, 10)
+    if not selected then
+        emptyState(px, top, pw, bodyH, "Choose a collection", "Your saved packs appear here.")
+        return
+    end
+    local ix, iw = px + 14, pw - 28
+    if UI.cRenaming then
+        input(ix, top + 12, iw, 30, UI, "cRename", "crename", "Collection name", 20)
+    else
+        txt(fit(selected.name, iw, FS + 2), ix, top + 29, FS + 2, TH.text, 14, false, true)
+    end
+    local bw, rowY = math.floor((iw - 12) / 3), top + 54
+    if UI.cRenaming then
+        button(ix, rowY, bw, 28, "Save name", "crsave", function()
+            local name = UI.cRename:gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 32)
+            if name ~= "" then selected.name = name; markDirty(); UI.cVer = UI.cVer + 1 end
+            UI.cRenaming = false; blur()
+        end, "primary", 20)
+        button(ix + bw + 6, rowY, bw, 28, "Cancel", "crcancel", function()
+            UI.cRenaming = false; blur()
+        end, "soft", 20)
+    else
+        button(ix, rowY, bw, 28, "Browse", "cbrowse", function()
+            UI.page = "Browse"; UI.bFilter = "all"; UI.bPage = 1
+        end, "primary", 20, "Browse all packs and add them with +")
+        button(ix + bw + 6, rowY, bw, 28, "Rename", "crenamebtn", function()
+            UI.cRenaming = true; UI.cRename = selected.name; focusInput("crename")
+        end, "soft", 20)
+    end
+    local confirming = UI.delConfirm and UI.delConfirm.id == "col" .. selected.id and tick() < UI.delConfirm.t
+    button(ix + (bw + 6) * 2, rowY, bw, 28, confirming and "Confirm" or "Delete", "cdelete", function()
+        if confirming then
+            for i, col in ipairs(State.collections) do
+                if col.id == selected.id then table.remove(State.collections, i); break end
+            end
+            UI.cTarget = State.collections[1] and State.collections[1].id or nil
+            UI.cPage, UI.cListPage, UI.cRenaming = 1, 1, false
+            UI.delConfirm = nil; UI.cVer = UI.cVer + 1
+            markDirty(); toast("Collection deleted", "info")
+        else
+            UI.delConfirm = { id = "col" .. selected.id, t = tick() + 3 }
+        end
+    end, confirming and "dangerSolid" or "danger", 20)
+    local ltop, lbottom = top + 94, top + bodyH - footH - 8
+    local list = {}
+    for _, id in ipairs(selected.packs) do
+        local p = PACK_BY_ID[tostring(id)]
+        if p then list[#list + 1] = p end
+    end
+    local rh, g = 32, 4
+    local count = math.max(1, math.floor((lbottom - ltop + g) / (rh + g)))
+    local pg = math.max(1, math.ceil(#list / count))
+    UI.cListPage = math.clamp(UI.cListPage, 1, pg)
+    local first = (UI.cListPage - 1) * count
+    for k = 1, count do
+        local p = list[first + k]
+        if not p then break end
+        local ry = ltop + (k - 1) * (rh + g)
+        rect(ix, ry, iw, rh, hit(ix, ry, iw, rh) and TH.ctl or TH.rowIn, 12, 9)
+        local wearX = ix + iw - 90
+        txt(fit(p.name, wearX - ix - 14, FS - 1), ix + 10, ry + rh / 2, FS - 1, TH.text, 14)
+        button(wearX, ry + 3, 46, 26, "Wear", "cwear" .. p.id, function() equipPack(p) end,
+            "soft", 20, nil, FS - 2)
+        button(wearX + 50, ry + 3, 34, 26, "x", "cremove" .. p.id,
+            function() Extras.togglePack(p.id) end, "ghost", 20, "Remove from collection", FS - 2)
+    end
+    if #list == 0 then
+        emptyState(px, ltop, pw, lbottom - ltop, "Collection is empty", "Browse all packs and use + to add them.")
+    end
+    if pg > 1 then
+        footer(ix, top + bodyH - footH, iw, "cListPage", pg, #list,
+            first + 1, math.min(first + count, #list), "cip", false)
+    end
 end
 local function renderMix(x, y, w, h)
     local n = mixCount()
@@ -1485,21 +1596,22 @@ local function renderAppearance(x, y, w, h)
 end
 local PAGES = {
     { "Home", "Home" }, { "Browse", "Browse" }, { "Favorites", "Favorites" }, { "MixMatch", "Mix" },
-    { "Presets", "Presets" }, { "Controls", "Controls" },
+    { "Presets", "Presets" }, { "Collections", "Folders" }, { "Controls", "Controls" },
 }
 local PAGE_TITLE = { Home = "Your workspace", Browse = "Browse", Favorites = "Favorites", MixMatch = "Mix & Match",
-    Presets = "Presets", Controls = "Controls", Appearance = "Settings" }
+    Presets = "Presets", Collections = "Collections", Controls = "Controls", Appearance = "Settings" }
 local PAGE_SUB = {
     Home = "A clear view of your setup. Pick an animation, fine-tune it, swap fast.",
     Browse = "Browse real animation packs. Select Wear to equip one.",
     Favorites = "Your saved packs, one click away.",
     MixMatch = "Mix and match animations for each movement state.",
     Presets = "Save a mix and switch back to it any time.",
+    Collections = "Organize packs into your own folders.",
     Controls = "Hotkeys, the swap wheel and respawn behavior.",
     Appearance = "Theme, text size and layout.",
 }
 local PAGE_ICON = { Home = "home", Browse = "list", Favorites = "star", MixMatch = "layers",
-    Presets = "bookmark", Controls = "keys", Appearance = "sliders" }
+    Presets = "bookmark", Collections = "folder", Controls = "keys", Appearance = "sliders" }
 local SB_X, SB_W = 14, 78
 local PANEL_X = SB_X + SB_W + 10
 local CX = PANEL_X + 26
@@ -1541,10 +1653,12 @@ local function renderHome(x, y, w, h)
     local ph = h - cardH - gap
     card(x, py, w, ph, 22, 10)
     txt("Your library", x + 22, py + 28, FS + 1, TH.text, 14, false, true)
-    txt(tostring(#PACKS) .. " animation packs  |  " .. tostring(#State.favs) .. " favorites  |  "
-        .. tostring(#State.presets) .. " presets", x + 22, py + 50, FS - 2, TH.sub, 14)
+    txt(tostring(#PACKS) .. " packs  |  " .. tostring(#State.favs) .. " favorites  |  "
+        .. tostring(#State.presets) .. " presets  |  " .. tostring(#State.collections) .. " collections",
+        x + 22, py + 50, FS - 2, TH.sub, 14)
     button(x + 20, py + 66, 140, 30, "Browse packs", "quickbrowse", function() UI.page = "Browse" end, "primary", 20)
     button(x + 168, py + 66, 124, 30, "Favorites", "quickfav", function() UI.page = "Favorites" end, "soft", 20)
+    button(x + 300, py + 66, 138, 30, "Collections", "quickcol", function() UI.page = "Collections" end, "soft", 20)
     local recentY = py + 112
     if #State.recent > 0 and recentY + 30 < py + ph then
         txt("RECENTLY EQUIPPED", x + 22, recentY, FS - 3, TH.mute, 14, false, true)
@@ -1585,7 +1699,8 @@ local function renderWindow()
             UI.page = key; UI.jump = ""; UI.binding = nil; blur()
         end)
     end
-    for i, pg in ipairs(PAGES) do nav(pg[1], pg[2], 66 + (i - 1) * 72) end
+    local navGap = math.min(72, math.max(52, (H - 210) / 6))
+    for i, pg in ipairs(PAGES) do nav(pg[1], pg[2], 66 + (i - 1) * navGap) end
     nav("Appearance", "Settings", H - 14 - 58)
     local hy = 46
     local rE = CX + cw
@@ -1613,6 +1728,7 @@ local function renderWindow()
     elseif UI.page == "Favorites"  then renderPackList(CX, CT, cw, ch, "f")
     elseif UI.page == "MixMatch"   then renderMix(CX, CT, cw, ch)
     elseif UI.page == "Presets"    then renderPresets(CX, CT, cw, ch)
+    elseif UI.page == "Collections" then renderCollections(CX, CT, cw, ch)
     elseif UI.page == "Controls"   then renderControls(CX, CT, cw, ch)
     elseif UI.page == "Appearance" then renderAppearance(CX, CT, cw, ch)
     end
