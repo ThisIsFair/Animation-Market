@@ -2235,6 +2235,12 @@ conn = RunService.Heartbeat:Connect(function(dt)
         warn("[Stance] " .. tostring(err))
     end
 end)
+if engine and type(engine.Status) == "function" then
+    local ok, status = pcall(engine.Status)
+    if ok and type(status) == "table" and status.available == false then
+        warn("[Stance Dev] Playback unavailable: " .. tostring(status.reason))
+    end
+end
 if catalogError then toast(catalogError, "bad")
 elseif engineError then toast("Animation engine unavailable: " .. engineError, "bad")
 else toast("Stance loaded: " .. tostring(#PACKS) .. " animation packs", "good") end
