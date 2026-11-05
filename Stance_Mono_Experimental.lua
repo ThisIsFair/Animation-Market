@@ -348,6 +348,82 @@ end
 local inputBlocked = false
 local inputRetries = 0
 local lastInputSet = 0
+local movementGuard = { character = nil, humanoid = nil, root = nil, defaults = {}, nextScan = 0, logged = false }
+local movementProperties = {"WalkSpeed", "JumpPower", "JumpHeight"}
+local function releaseMovementGuard()
+    if movementGuard.humanoid then
+        for prop, value in pairs(movementGuard.defaults) do
+            pcall(function() movementGuard.humanoid[prop] = value end)
+        end
+    end
+    movementGuard.character = nil
+    movementGuard.humanoid = nil
+    movementGuard.root = nil
+    movementGuard.defaults = {}
+    movementGuard.nextScan = 0
+end
+local function updateMovementGuard(want)
+    if not want then
+        if movementGuard.character or movementGuard.humanoid or movementGuard.root then releaseMovementGuard() end
+        movementGuard.logged = false
+        return
+    end
+    local now = tick()
+    if now >= movementGuard.nextScan then
+        movementGuard.nextScan = now + 0.2
+        local ok, char = pcall(function() return LocalPlayer.Character end)
+        if not ok then char = nil end
+        if char ~= movementGuard.character then
+            releaseMovementGuard()
+            movementGuard.character = char
+            movementGuard.nextScan = now + 0.2
+        end
+        if char then
+            local hum, root
+            pcall(function() hum = char:FindFirstChildOfClass("Humanoid") end)
+            pcall(function() root = char:FindFirstChild("HumanoidRootPart") end)
+            if hum ~= movementGuard.humanoid then
+                if movementGuard.humanoid then
+                    for prop, value in pairs(movementGuard.defaults) do
+                        pcall(function() movementGuard.humanoid[prop] = value end)
+                    end
+                end
+                movementGuard.defaults = {}
+                movementGuard.humanoid = hum
+                if hum then
+                    for _, prop in ipairs(movementProperties) do
+                        local readOk, original = pcall(function() return hum[prop] end)
+                        if readOk and type(original) == "number" then
+                            local writeOk = pcall(function() hum[prop] = 0 end)
+                            if writeOk then movementGuard.defaults[prop] = original end
+                        end
+                    end
+                end
+            end
+            movementGuard.root = root
+        end
+    end
+    local hum = movementGuard.humanoid
+    if hum then
+        for prop in pairs(movementGuard.defaults) do
+            pcall(function() hum[prop] = 0 end)
+        end
+        pcall(function() hum.Jump = false end)
+    end
+    local root = movementGuard.root
+    if root then
+        pcall(function()
+            local v = root.AssemblyLinearVelocity
+            if v and (math.abs(v.X) > 0.02 or math.abs(v.Z) > 0.02) then
+                root.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
+            end
+        end)
+    end
+    if not movementGuard.logged and movementGuard.character then
+        movementGuard.logged = true
+        warn("[Stance Dev] Text-field movement guard enabled; CAS bound=" .. tostring(casBound))
+    end
+end
 local function syncInput(force)
     local want = UI.visible and (UI.focus ~= nil or UI.binding ~= nil)
     if want ~= inputBlocked then
@@ -362,6 +438,7 @@ local function syncInput(force)
         if inputRetries > 0 then inputRetries = inputRetries - 1 end
     end
     casSet(want)
+    updateMovementGuard(want)
 end
 local function blur()
     UI.focus = nil
@@ -2143,6 +2220,7 @@ _G.StanceUnload = function()
     end
     pcall(setrobloxinput, true)
     casSet(false)
+    releaseMovementGuard()
 end
 conn = RunService.Heartbeat:Connect(function(dt)
     if not alive then return end
