@@ -1750,7 +1750,6 @@ _G.MatchaAnimationChangerPlayback = {
 
 
 local StanceEngine = _G.MatchaAnimationChangerPlayback
-local stancePreviewBase = nil
 local function stanceCopy(selection)
     local result = {}
     for name, ids in pairs(selection or {}) do
@@ -1842,28 +1841,12 @@ local function stanceApplyIds(idsByState)
     return true, "Queued " .. tostring(count) .. " animation states"
 end
 StanceEngine.ApplyStateIds = function(ids)
-    stancePreviewBase = nil
     return stanceApplyIds(ids)
 end
 StanceEngine.ApplyRows = function(rows)
-    stancePreviewBase = nil
     return stanceApplyIds(MarketCore.group(rows))
 end
 StanceEngine.Restore = function()
-    stancePreviewBase = nil
-    return stanceRestoreTracked()
-end
-StanceEngine.PreviewRows = function(rows)
-    if stancePreviewBase == nil then
-        stancePreviewBase = stanceCopy(activeSpoofs)
-    end
-    return stanceApplyIds(MarketCore.group(rows))
-end
-StanceEngine.StopPreview = function()
-    if stancePreviewBase == nil then return true end
-    local before = stancePreviewBase
-    stancePreviewBase = nil
-    if next(before) then return stanceApplyIds(before) end
     return stanceRestoreTracked()
 end
 StanceEngine.Library = function()
@@ -1876,7 +1859,6 @@ end
 _G.StanceAnimationEngine = StanceEngine
 _G.StanceEngineUnload = function()
     stanceEngineAlive = false
-    stancePreviewBase = nil
     pcall(stanceRestoreTracked)
     if _G.StanceAnimationEngine == StanceEngine then _G.StanceAnimationEngine = nil end
 end
