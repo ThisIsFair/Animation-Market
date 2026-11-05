@@ -350,20 +350,32 @@ local function casSet(on)
 end
 local inputBlocked = false
 local inputChanged = 0
+local inputSent = nil
+local inputSetErrors = 0
+local inputSetCalls = 0
+local inputHover = false
 local function syncInput(force)
-    local inside = UI.visible and Mouse.x >= OX and Mouse.x <= OX + UI.W * S
+    local hovered = UI.visible and Mouse.x >= OX and Mouse.x <= OX + UI.W * S
         and Mouse.y >= OY and Mouse.y <= OY + UI.H * S
     local focused = UI.visible and (UI.focus ~= nil or UI.binding ~= nil)
-    local want = focused or inside
-    if want ~= inputBlocked or force then
+    local captured = focused or hovered or UI.wheelOpen == true
+    local toGame = not captured
+    inputHover = hovered
+    if force or inputSent ~= toGame then
         if type(setrobloxinput) == "function" then
-            local ok = pcall(setrobloxinput, not want)
+            local ok, reason = pcall(setrobloxinput, toGame)
+            inputSetCalls = inputSetCalls + 1
             if ok then
-                inputBlocked = want
+                inputSent = toGame
+                inputBlocked = captured
                 inputChanged = tick()
+            else
+                inputSetErrors = inputSetErrors + 1
+                if inputSetErrors <= 3 then warn("[Stance Dev] Input forwarding: " .. tostring(reason)) end
             end
-        else
-            inputBlocked = want
+        elseif inputSetErrors == 0 then
+            inputSetErrors = 1
+            warn("[Stance Dev] Matcha setrobloxinput unavailable; typing may move the character")
         end
     end
     casSet(focused)
@@ -1718,6 +1730,8 @@ local function wheelOpen()
     wheel.sel = nil
     buildWheelGeom(rings, wheel.cx, wheel.cy)
     wheel.open = true
+    UI.wheelOpen = true
+    syncInput(true)
 end
 local atan2 = math.atan2 or math.atan
 local function wheelSelect()
@@ -1726,6 +1740,7 @@ local function wheelSelect()
     local r = math.sqrt(dx * dx + dy * dy)
     if r < 48 then return end
     local rings = wheel.rings
+    if r > rings[#rings].r1 + 26 then return end
     local ring
     if #rings == 1 then ring = rings[1]
     else ring = (r <= (rings[1].r1 + rings[2].r0) / 2) and rings[1] or rings[2] end
@@ -1740,8 +1755,10 @@ end
 local function wheelClose(apply)
     local sel = wheel.sel
     wheel.open = false
+    UI.wheelOpen = false
     wheel.rings = nil
     wheel.sel = nil
+    syncInput(true)
     if apply and sel and sel.item and sel.item.fn then pcall(sel.item.fn) end
 end
 local function processHotkeys()
@@ -1812,8 +1829,10 @@ local function drawWheel()
     for j = #rings, 1, -1 do
         local ring = rings[j]
         local z = 100 + (#rings - j) * 2
-        circle(cx, cy, ring.r1, TH.ctl, z, op)
-        circle(cx, cy, ring.r0, TH.bg, z + 1, op)
+        circle(cx, cy, ring.r1 + 1, TH.line, z, op)
+        circle(cx, cy, ring.r1, TH.ctl, z + 1, op)
+        circle(cx, cy, ring.r0 + 1, TH.line, z + 2, op)
+        circle(cx, cy, ring.r0, TH.bg, z + 3, op)
     end
     local sel = wheel.sel
     for _, ring in ipairs(rings) do
@@ -1821,6 +1840,8 @@ local function drawWheel()
             local selected = sel ~= nil and sel.item == it
             local labelWidth = math.max(26, it.segW - 5)
             if selected then
+                rect(it.lx - labelWidth / 2 - 2, it.ly - 15, labelWidth + 4, 30,
+                    TH.lineHi, 105, 15, op, true)
                 rect(it.lx - labelWidth / 2, it.ly - 13, labelWidth, 26,
                     TH.accent, 106, 13, op, true)
             end
@@ -1840,8 +1861,8 @@ local function drawWheel()
             FS - 1, TH.text, 112, true, true, op)
         txt(sel.item.kind, cx, cy + 10, FS - 3, TH.sub, 112, true, false, op)
     else
-        txt("Aim", cx, cy - 7, FS, TH.text, 112, true, true, op)
-        txt("release to cancel", cx, cy + 10, FS - 4, TH.mute, 112, true, false, op)
+        txt("QUICK SWAP", cx, cy - 7, FS - 2, TH.text, 112, true, true, op)
+        txt("aim to select", cx, cy + 10, FS - 4, TH.mute, 112, true, false, op)
     end
 end
 function renderOverlay()
@@ -1874,6 +1895,7 @@ local Scheduler = {
     counts = { RenderStepped = 0, Heartbeat = 0, Task = 0 },
     active = "RenderStepped", window = os.clock(),
     lastStep = os.clock(), changes = 0,
+    taskWait = 1 / 240,
 }
 local lastErr = nil
 local function step(dt)
@@ -2018,6 +2040,14 @@ _G.StanceDevStats = function()
         heartbeatHz = Scheduler.rates.Heartbeat,
         renderSteppedHz = Scheduler.rates.RenderStepped,
         taskHz = Scheduler.rates.Task,
+        taskWait = Scheduler.taskWait,
+        inputSent = inputSent,
+        inputSetCalls = inputSetCalls,
+        inputSetErrors = inputSetErrors,
+        casBound = casBound,
+        casEvents = casEvents,
+        inputHover = inputHover,
+        inputChanged = inputChanged,
         uiHz = Scheduler.uiHz,
         scheduler = Scheduler.active,
         schedulerChanges = Scheduler.changes,
@@ -2033,7 +2063,9 @@ _G.StanceUnload = function()
         for _, e in ipairs(list) do pcall(function() e.o:Remove() end) end
     end
     if type(setrobloxinput) == "function" then pcall(setrobloxinput, true) end
+    inputSent = true
     inputBlocked = false
+    UI.wheelOpen = false
     casSet(false)
     _G.StanceDevStats = nil
     if type(_G.StanceEngineUnload) == "function" then pcall(_G.StanceEngineUnload) end
@@ -2055,10 +2087,17 @@ function Scheduler.tick(name)
             end
         end
         Scheduler.window = now
-        if Scheduler.rates[Scheduler.active] < bestRate - 5 then
+        if Scheduler.rates.RenderStepped >= 115 then
+            best = "RenderStepped"
+        elseif Scheduler.rates.Task >= 115 then
+            best = "Task"
+        elseif Scheduler.rates.Heartbeat >= 115 then
+            best = "Heartbeat"
+        end
+        if Scheduler.active ~= best then
             Scheduler.active = best
             Scheduler.changes = Scheduler.changes + 1
-            print("[Stance Dev] UI scheduler: " .. best .. " (" .. string.format("%.1f", bestRate) .. " Hz)")
+            print("[Stance Dev] UI scheduler: " .. best .. " (" .. string.format("%.1f", Scheduler.rates[best]) .. " Hz)")
         end
     end
     if Scheduler.active ~= name or now - Scheduler.lastStep < 1 / 120 then return end
@@ -2080,7 +2119,7 @@ Scheduler.connect("RenderStepped", RunService.RenderStepped)
 Scheduler.connect("Heartbeat", RunService.Heartbeat)
 task.spawn(function()
     while alive do
-        task.wait(0)
+        task.wait(Scheduler.taskWait)
         if alive then Scheduler.tick("Task") end
     end
 end)
