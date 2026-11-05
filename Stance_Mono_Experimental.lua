@@ -12,7 +12,7 @@ local MIN_W, MIN_H     = 760, 600
 local FONT_REG  = Drawing.Fonts.System or Drawing.Fonts.UI
 local FONT_BOLD = Drawing.Fonts.SystemBold or FONT_REG
 local alive = true
-local conn  = nil
+local connections = {}
 local function round(v) return math.floor(v + 0.5) end
 local function defaultState()
     return {
@@ -1697,29 +1697,13 @@ local function buildWheelGeom(rings, cx, cy)
     for _, ring in ipairs(rings) do
         local n = #ring.items
         local d = 2 * math.pi / n
-        local gap = math.min(0.03, d * 0.12)
         local rm = (ring.r0 + ring.r1) / 2
         for i, it in ipairs(ring.items) do
-            local c = (i - 1) * d
-            local a0, a1 = c - d / 2 + gap, c + d / 2 - gap
-            local steps = math.max(2, math.ceil((a1 - a0) / 0.1))
-            local tris = {}
-            for k = 0, steps - 1 do
-                local b0 = a0 + (a1 - a0) * k / steps
-                local b1 = a0 + (a1 - a0) * (k + 1) / steps
-                local s0, c0, s1, c1 = math.sin(b0), math.cos(b0), math.sin(b1), math.cos(b1)
-                local ox0, oy0 = cx + ring.r1 * s0, cy - ring.r1 * c0
-                local ox1, oy1 = cx + ring.r1 * s1, cy - ring.r1 * c1
-                local ix0, iy0 = cx + ring.r0 * s0, cy - ring.r0 * c0
-                local ix1, iy1 = cx + ring.r0 * s1, cy - ring.r0 * c1
-                tris[#tris + 1] = { ox0, oy0, ox1, oy1, ix1, iy1 }
-                tris[#tris + 1] = { ox0, oy0, ix1, iy1, ix0, iy0 }
-            end
-            it.tris = tris
-            it.dirx, it.diry = math.sin(c), -math.cos(c)
+            local angle = (i - 1) * d
+            it.dirx, it.diry = math.sin(angle), -math.cos(angle)
             it.lx, it.ly = cx + rm * it.dirx, cy + rm * it.diry
-            it.segW = rm * d * 0.9
-            it.ex, it.ey = cx + (ring.r1 - 12) * it.dirx, cy + (ring.r1 - 12) * it.diry
+            it.segW = math.min(116, rm * d * 0.84)
+            it.ex, it.ey = cx + (ring.r1 - 10) * it.dirx, cy + (ring.r1 - 10) * it.diry
         end
     end
 end
@@ -1823,32 +1807,41 @@ local function drawWheel()
     local rings = wheel.rings
     local R = rings[#rings].r1
     local op = 1 / State.opacity
-    circle(cx, cy, R + 20, TH.lineHi, 98, op)
-    circle(cx, cy, R + 18, TH.bg, 99, op)
+    circle(cx, cy, R + 16, TH.lineHi, 98, op)
+    circle(cx, cy, R + 14, TH.bg, 99, op)
+    for j = #rings, 1, -1 do
+        local ring = rings[j]
+        local z = 100 + (#rings - j) * 2
+        circle(cx, cy, ring.r1, TH.ctl, z, op)
+        circle(cx, cy, ring.r0, TH.bg, z + 1, op)
+    end
     local sel = wheel.sel
     for _, ring in ipairs(rings) do
         for _, it in ipairs(ring.items) do
-            local isSel = sel ~= nil and sel.item == it
-            local col = isSel and TH.accent or (it.on and TH.onSeg or TH.ctl)
-            local ox, oy = 0, 0
-            if isSel then ox, oy = it.dirx * 7, it.diry * 7 end
-            for _, t in ipairs(it.tris) do
-                tri(t[1] + ox, t[2] + oy, t[3] + ox, t[4] + oy, t[5] + ox, t[6] + oy, col, 100, op)
+            local selected = sel ~= nil and sel.item == it
+            local labelWidth = math.max(26, it.segW - 5)
+            if selected then
+                rect(it.lx - labelWidth / 2, it.ly - 13, labelWidth, 26,
+                    TH.accent, 106, 13, op, true)
             end
-            if it.segW >= 38 then
-                txt(fit(it.name, it.segW, FS - 2), it.lx + ox, it.ly + oy, FS - 2,
-                    isSel and TH.onAccent or TH.text, 104, true, isSel, op)
+            if it.segW >= 32 then
+                txt(fit(it.name, labelWidth - 8, FS - 2), it.lx, it.ly,
+                    FS - 2, selected and TH.onAccent or TH.text, 107, true, selected, op)
             end
-            if it.on then rect(it.ex + ox - 4, it.ey + oy - 4, 8, 8, TH.good, 104, 4, op, true) end
+            if it.on then
+                rect(it.ex - 3, it.ey - 3, 6, 6, TH.good, 108, 3, op, true)
+            end
         end
     end
-    rect(cx - 47, cy - 47, 94, 94, TH.card, 101, 47, op, true)
+    circle(cx, cy, 48, TH.lineHi, 110, op)
+    circle(cx, cy, 46, TH.card, 111, op)
     if sel then
-        txt(fit(sel.item.name, 88, FS - 1), cx, cy - 7, FS - 1, TH.text, 104, true, true, op)
-        txt(sel.item.kind, cx, cy + 10, FS - 3, TH.sub, 104, true, false, op)
+        txt(fit(sel.item.name, 86, FS - 1), cx, cy - 7,
+            FS - 1, TH.text, 112, true, true, op)
+        txt(sel.item.kind, cx, cy + 10, FS - 3, TH.sub, 112, true, false, op)
     else
-        txt("Aim", cx, cy - 7, FS, TH.text, 104, true, true, op)
-        txt("release to cancel", cx, cy + 10, FS - 4, TH.mute, 104, true, false, op)
+        txt("Aim", cx, cy - 7, FS, TH.text, 112, true, true, op)
+        txt("release to cancel", cx, cy + 10, FS - 4, TH.mute, 112, true, false, op)
     end
 end
 function renderOverlay()
@@ -1875,7 +1868,13 @@ function renderOverlay()
 end
 local prevDown, f4Held, homeHeld = false, false, false
 local stepMs, stepPeakMs, stepFrames = 0, 0, 0
-local heartbeatHz, heartbeatCount, heartbeatWindow = 0, 0, os.clock()
+local Scheduler = {
+    uiHz = 0, uiCount = 0, uiWindow = os.clock(),
+    rates = { RenderStepped = 0, Heartbeat = 0, Task = 0 },
+    counts = { RenderStepped = 0, Heartbeat = 0, Task = 0 },
+    active = "RenderStepped", window = os.clock(),
+    lastStep = os.clock(), changes = 0,
+}
 local lastErr = nil
 local function step(dt)
     local stepStart = os.clock()
@@ -1988,11 +1987,11 @@ local function step(dt)
     stepMs = (os.clock() - stepStart) * 1000
     stepPeakMs = math.max(stepPeakMs * 0.98, stepMs)
     stepFrames = stepFrames + 1
-    heartbeatCount = heartbeatCount + 1
-    if os.clock() - heartbeatWindow >= 1 then
-        heartbeatHz = heartbeatCount / (os.clock() - heartbeatWindow)
-        heartbeatCount = 0
-        heartbeatWindow = os.clock()
+    Scheduler.uiCount = Scheduler.uiCount + 1
+    if os.clock() - Scheduler.uiWindow >= 1 then
+        Scheduler.uiHz = Scheduler.uiCount / (os.clock() - Scheduler.uiWindow)
+        Scheduler.uiCount = 0
+        Scheduler.uiWindow = os.clock()
     end
 end
 _G.StanceDevStats = function()
@@ -2016,13 +2015,20 @@ _G.StanceDevStats = function()
         stepMs = stepMs,
         stepPeakMs = stepPeakMs,
         stepCount = stepFrames,
-        heartbeatHz = heartbeatHz,
+        heartbeatHz = Scheduler.rates.Heartbeat,
+        renderSteppedHz = Scheduler.rates.RenderStepped,
+        taskHz = Scheduler.rates.Task,
+        uiHz = Scheduler.uiHz,
+        scheduler = Scheduler.active,
+        schedulerChanges = Scheduler.changes,
         dragging = UI.dragging,
     }
 end
 _G.StanceUnload = function()
     alive = false
-    pcall(function() conn:Disconnect() end)
+    for _, connection in ipairs(connections) do
+        pcall(function() connection:Disconnect() end)
+    end
     for _, list in pairs(Pool) do
         for _, e in ipairs(list) do pcall(function() e.o:Remove() end) end
     end
@@ -2032,12 +2038,50 @@ _G.StanceUnload = function()
     _G.StanceDevStats = nil
     if type(_G.StanceEngineUnload) == "function" then pcall(_G.StanceEngineUnload) end
 end
-conn = RunService.Heartbeat:Connect(function(dt)
+function Scheduler.tick(name)
     if not alive then return end
+    local now = os.clock()
+    Scheduler.counts[name] = Scheduler.counts[name] + 1
+    local sampleSeconds = now - Scheduler.window
+    if sampleSeconds >= 1 then
+        local best = Scheduler.active
+        local bestRate = 0
+        for kind, count in pairs(Scheduler.counts) do
+            Scheduler.rates[kind] = count / sampleSeconds
+            Scheduler.counts[kind] = 0
+            if Scheduler.rates[kind] > bestRate then
+                best = kind
+                bestRate = Scheduler.rates[kind]
+            end
+        end
+        Scheduler.window = now
+        if Scheduler.rates[Scheduler.active] < bestRate - 5 then
+            Scheduler.active = best
+            Scheduler.changes = Scheduler.changes + 1
+            print("[Stance Dev] UI scheduler: " .. best .. " (" .. string.format("%.1f", bestRate) .. " Hz)")
+        end
+    end
+    if Scheduler.active ~= name or now - Scheduler.lastStep < 1 / 120 then return end
+    local dt = math.min(now - Scheduler.lastStep, 0.25)
+    Scheduler.lastStep = now
     local ok, err = pcall(step, dt)
     if not ok and err ~= lastErr then
         lastErr = err
         warn("[Stance] " .. tostring(err))
+    end
+end
+function Scheduler.connect(name, signal)
+    local ok, connection = pcall(function()
+        return signal:Connect(function() Scheduler.tick(name) end)
+    end)
+    if ok and connection then connections[#connections + 1] = connection end
+end
+Scheduler.connect("RenderStepped", RunService.RenderStepped)
+Scheduler.connect("Heartbeat", RunService.Heartbeat)
+task.spawn(function()
+    while alive do
+        task.wait(0)
+        if alive then Scheduler.tick("Task") end
     end
 end)
 if engine and type(engine.Status) == "function" then
