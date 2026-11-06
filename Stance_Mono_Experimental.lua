@@ -373,11 +373,9 @@ local function syncInput(force)
                 inputChanged = tick()
             else
                 inputSetErrors = inputSetErrors + 1
-                if inputSetErrors <= 3 then warn("[Stance Dev] Input forwarding: " .. tostring(reason)) end
             end
         elseif inputSetErrors == 0 then
             inputSetErrors = 1
-            warn("[Stance Dev] Matcha setrobloxinput unavailable; typing may move the character")
         end
     end
     casSet(focused)
@@ -2398,12 +2396,6 @@ local function step(dt)
     end
     if UI.delConfirm and tick() > UI.delConfirm.t then UI.delConfirm = nil end
     if UI.binding then captureBind() end
-    if UI.focus and not casWarned and rbxActive() and (iskeypressed(0x57) or iskeypressed(0x41) or iskeypressed(0x53) or iskeypressed(0x44)) then
-        if not casBound or casEvents == 0 then
-            casWarned = true
-            warn("[Stance Dev] Movement-key sinking is not confirmed by Matcha; physical keys may reach Roblox")
-        end
-    end
     watchRespawn()
     processHotkeys()
     handleKeys(dt)
@@ -2578,7 +2570,6 @@ function Scheduler.tick(name)
         if Scheduler.active ~= best then
             Scheduler.active = best
             Scheduler.changes = Scheduler.changes + 1
-            print("[Stance Dev] UI scheduler: " .. best .. " (" .. string.format("%.1f", Scheduler.rates[best]) .. " Hz)")
         end
     end
     if Scheduler.active ~= name or now - Scheduler.lastStep < 1 / 120 then return end
@@ -2587,7 +2578,7 @@ function Scheduler.tick(name)
     local ok, err = pcall(step, dt)
     if not ok and err ~= lastErr then
         lastErr = err
-        warn("[Stance] " .. tostring(err))
+        toast("Stance UI error: " .. tostring(err), "bad")
     end
 end
 function Scheduler.connect(name, signal)
@@ -2607,10 +2598,9 @@ end)
 if engine and type(engine.Status) == "function" then
     local ok, status = pcall(engine.Status)
     if ok and type(status) == "table" and status.available == false then
-        warn("[Stance Dev] Playback unavailable: " .. tostring(status.reason))
+        toast("Playback unavailable: " .. tostring(status.reason), "bad")
     end
 end
 if catalogError then toast(catalogError, "bad")
 elseif engineError then toast("Animation engine unavailable: " .. engineError, "bad")
 else toast("Stance loaded: " .. tostring(#PACKS) .. " animation packs", "good") end
-print("[Stance Dev] Mono wheel v3 active")
