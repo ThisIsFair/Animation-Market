@@ -1101,7 +1101,17 @@ local function capability()
         local hum=c and c:FindFirstChild("Humanoid")
         local animate=c and c:FindFirstChild("Animate")
         if not hum or not animate then return "Character Humanoid/Animate missing" end
-        if type(hum.Address)~="number" then return "Humanoid.Address missing" end
+        if type(hum.Address)~="number" or hum.Address<65536 then return "Humanoid.Address missing" end
+        local stand=memory_read("byte",hum.Address+PLATFORMSTAND_OFFSET)
+        if stand~=0 and stand~=1 then return "PlatformStand memory is not boolean (0/1)" end
+        if offsetSource=="theo" then
+            local okStand,nativeStand=pcall(function() return hum.PlatformStand end)
+            if okStand and type(nativeStand)=="boolean" and stand~=(nativeStand and 1 or 0) then
+                return "Auto-resolved PlatformStand offset conflicts with readable Roblox property"
+            end
+        end
+        local seen={}
+        local valid=0
         for _,name in ipairs({"run","walk","idle"}) do
             local folder=animate:FindFirstChild(name)
             if folder then
@@ -1109,28 +1119,37 @@ local function capability()
                 for _,anim in ipairs(anims) do
                     local addr,old=validateAnimationMemory(anim)
                     if addr then
-                        local value=memory_read("byte",hum.Address+PLATFORMSTAND_OFFSET)
-                        if value~=0 and value~=1 then return "PlatformStand memory is not boolean (0/1)" end
-                        if offsetSource=="theo" then
-                            local nativeId=probeNativeId(anim)
-                            if not nativeId or nativeId~=animationIdFromText(old) then
-                                return "Auto-resolved AnimationId offset did not match Roblox's read-only AnimationId property"
-                            end
-                            local okStand,nativeStand=pcall(function() return hum.PlatformStand end)
-                            if not okStand or type(nativeStand)~="boolean" or value~=(nativeStand and 1 or 0) then
-                                return "Auto-resolved PlatformStand offset failed read-only validation"
-                            end
+                        if offsetSource~="theo" then return nil end
+                        local memoryId=old:match("^rbxassetid://(%d+)$")
+                            or old:match("^http://www%.roblox%.com/asset/%?id=(%d+)$")
+                            or old:match("^https://www%.roblox%.com/asset/%?id=(%d+)$")
+                        if not memoryId then
+                            return "Auto-resolved AnimationId memory is not a canonical Roblox asset URI"
                         end
-                        return nil
+                        local nativeId=probeNativeId(anim)
+                        if nativeId and nativeId~=memoryId then
+                            return "Auto-resolved AnimationId offset conflicts with readable Roblox property"
+                        end
+                        if not seen[addr] then
+                            seen[addr]=true
+                            valid=valid+1
+                        end
                     end
                 end
             end
         end
-        return "No valid AnimationId string found in Animate memory"
+        if offsetSource=="theo" then
+            if valid<2 then
+                return "Auto-resolved offsets require two readable AnimationId instances before writes"
+            end
+        else
+            return "No valid AnimationId string found in Animate memory"
+        end
+        return nil
     end)
     if not ok then return false,"Capability read failed: "..tostring(reason) end
     if reason then return false,reason end
-    return true,(offsetSource=="theo" and "Auto-resolved offsets validated" or "Version-pinned memory engine available").." (VISUAL playback unverified)"
+    return true,(offsetSource=="theo" and "Auto-resolved offsets validated by read-only memory checks" or "Version-pinned memory engine available").." (VISUAL playback unverified)"
 end
 local stanceOriginals = {}
 local stanceEngineAlive = true
