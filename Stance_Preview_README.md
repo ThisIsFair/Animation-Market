@@ -1,4 +1,24 @@
-# Stance Dev — Independent R15 Animation Preview
+# Stance Dev — Automatic 3D Animation Previews
+
+The preferred workflow is automatic **on demand**: selecting a marketplace pack's animation ID makes Stance queue the clip for extraction by a Studio companion and display it on its independent R15 mannequin. No individual JSON exports or typing asset IDs into Studio are needed. Your actual in-game character is never used as the preview rig.
+
+## One-time setup on Windows
+
+1. Download the following three files from this Dev branch and place them in the same folder: `Stance_Preview_Bridge.py`, `Stance_Start_Preview_Bridge.bat`, and `Stance_Preview_Studio_Auto.lua`.
+2. Install Python 3 if needed. Double-click `Stance_Start_Preview_Bridge.bat`. It starts a local-only HTTP service on `127.0.0.1:8765`.
+3. Open **Roblox Studio**, enable HTTP Requests in Security settings if necessary, then paste `Stance_Preview_Studio_Auto.lua` into Studio's Command Bar and run it once. Leave Studio open to process newly requested animations.
+4. Start Stance from `Dev/Stance_Mono_Experimental.lua` in Matcha. Click a marketplace pack to preview it, choose a movement state, or enter an ID. Stance requests the keyframes automatically, then plays and caches them.
+
+The Python helper uses only the standard library and does not ask you for a Roblox cookie or API key. Studio operates under your existing Roblox asset permissions; inaccessible animations remain unavailable. Cache files live in `StancePreviewCache` beside the Python script, with a second local cache attempted in Matcha.
+
+**Not fully validated in Roblox:** Matcha may block localhost HTTP, Studio may lack permission for particular assets, and R15 `CurveAnimation` is not supported. The viewer presently draws an approximate block mannequin and linearly interpolates `KeyframeSequence` poses. This Dev code passed Lua syntax checks, a mocked UI smoke test, and local bridge integration tests, not an end-to-end Matcha/Studio run.
+
+To stop the Studio worker, execute `_G.StancePreviewWorkerVersion = (_G.StancePreviewWorkerVersion or 0) + 1` in Studio's Command Bar. Close the bridge window to stop the server. `main` is not modified.
+
+---
+
+## Legacy manual-export fallback (not required for automatic mode)
+
 
 This is an experimental animation-preview viewer. It displays a blocky R15 mannequin rendered with Matcha's Drawing triangles, rather than a Roblox ViewportFrame. It does **not** load or animate your in-game character.
 
