@@ -1,5 +1,5 @@
 local Preview = {
-    current = nil, selectedSlot = "Idle", animationId = nil,
+    current = nil, selectedSlot = "Idle", animationId = nil, typedId = "",
     target = 0, progress = 0, yaw = 0.55, pitch = 0.1, zoom = 1,
     playTime = 0, playing = true, looping = true, speed = 1,
     orbiting = false, orbitX = 0, orbitY = 0, viewport = nil,
@@ -167,6 +167,13 @@ function Preview.load(id)
         end
     end)
 end
+function Preview.playTyped()
+    local id = tostring(Preview.typedId or ""):gsub("[^%d]", "")
+    if id == "" then toast("Enter an animation ID first", "info"); return end
+    Preview.current = nil
+    Preview.load(id)
+    Preview.target = 1
+end
 function Preview.selectPack(pack)
     if not pack then return end
     Preview.current = pack
@@ -280,7 +287,8 @@ function Preview.drawPanel(px, py, pw, ph)
     txt("ANIMATION PREVIEW", ix, py + 25, FS - 2, TH.sub, 14, false, true)
     button(px + pw - 40, py + 12, 26, 26, "x", "pvclose", function() Preview.target = 0 end,
         "ghost", 20, "Close preview")
-    txt(fit(Preview.current and Preview.current.name or "R15 Mannequin", iw, FS + 2),
+    txt(fit(Preview.current and Preview.current.name or
+        (Preview.animationId and ("Animation #" .. Preview.animationId) or "R15 Mannequin"), iw, FS + 2),
         ix, py + 51, FS + 2, TH.text, 14, false, true)
     local slotY = py + 65
     button(ix, slotY, iw, 28, "State: " .. (SLOT_LABEL[Preview.selectedSlot] or "Idle"), "pvslot", function()
@@ -334,4 +342,7 @@ function Preview.drawPanel(px, py, pw, ph)
     local position = Preview.clip and string.format("%.1f / %.1f s", Preview.playTime, Preview.clip.duration)
         or "Export keyframes to enable playback"
     txt(position, ix, py3 + 56, FS - 3, TH.sub, 42)
+    input(ix, py3 + 69, iw - 88, 28, Preview, "typedId", "pvtyped", "Animation ID", 20, nil, Preview.playTyped)
+    button(ix + iw - 80, py3 + 69, 80, 28, "Preview ID", "pvloadid", Preview.playTyped,
+        "soft", 20, "Show a specific animation ID on the separate mannequin", FS - 2)
 end
