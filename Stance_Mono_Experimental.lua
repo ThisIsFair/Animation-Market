@@ -958,6 +958,7 @@ local Preview = {
 local PREVIEW_WIDTH = 336
 local PREVIEW_ROOT = "SpooferConfig/StancePreviews/"
 local PREVIEW_REMOTE = "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/SpooferConfig/StancePreviews/"
+local PREVIEW_BRIDGE = "http://127.0.0.1:8765/v1/preview?id="
 local PREVIEW_EMPTY = CFrame.new()
 local PREVIEW_PARTS = {
     { "LowerTorso", nil, {0, -0.28, 0}, {1.6, 0.8, 0.8}, {0, 0, 0} },
@@ -1024,6 +1025,11 @@ local function previewNative(id)
     local ok, obj = pcall(function()
         return game:GetService("AnimationClipProvider"):GetAnimationClipAsync("rbxassetid://" .. id)
     end)
+    if not ok or not obj then
+        ok, obj = pcall(function()
+            return game:GetService("KeyframeSequenceProvider"):GetKeyframeSequenceAsync("rbxassetid://" .. id)
+        end)
+    end
     if not ok or not obj then return nil end
     local seqOk, isSeq = pcall(function() return obj:IsA("KeyframeSequence") end)
     if not seqOk or not isSeq then return nil end
@@ -1063,6 +1069,33 @@ local function previewNative(id)
     end)
     if not okJson or type(json) ~= "string" then return nil end
     return previewDecode(json, id), json
+end
+local function previewBridge(id, gen)
+    local reachable = false
+    for attempt = 1, 72 do
+        if Preview.generation ~= gen then return nil, "cancelled" end
+        local ok, body = pcall(httpget, PREVIEW_BRIDGE .. id)
+        if not ok or type(body) ~= "string" or body == "" then
+            return nil, "Automatic preview bridge offline"
+        end
+        reachable = true
+        if #body > 1800000 then return nil, "Preview data exceeded size limit" end
+        local clip = previewDecode(body, id)
+        if clip then return clip, nil, body end
+        local parsed, status = pcall(function() return HttpService:JSONDecode(body) end)
+        if not parsed or type(status) ~= "table" then
+            return nil, "Invalid response from preview bridge"
+        end
+        if status.status == "error" then
+            return nil, tostring(status.message or "Animation inaccessible")
+        end
+        if status.status ~= "queued" and status.status ~= "processing" then
+            return nil, "Preview bridge returned unexpected response"
+        end
+        Preview.message = status.status == "queued" and "Waiting for Studio companion..." or "Studio is extracting keyframes..."
+        if attempt < 72 then task.wait(.5) end
+    end
+    return nil, reachable and "Studio companion timed out; press Restart to retry" or "Bridge offline"
 end
 function Preview.load(id)
     if not id or not tostring(id):match("^%d+$") then
@@ -1106,13 +1139,27 @@ function Preview.load(id)
                 if clip then pcall(function() writefile(path, remote) end) end
             end
         end
+        local bridgeErr
+        if not clip then
+            local bridgeRaw
+            clip, bridgeErr, bridgeRaw = previewBridge(id, gen)
+            if clip and bridgeRaw then
+                pcall(function()
+                    if type(makefolder) == "function" then
+                        if not isfolder("SpooferConfig") then makefolder("SpooferConfig") end
+                        if not isfolder(PREVIEW_ROOT) then makefolder(PREVIEW_ROOT) end
+                    end
+                    writefile(path, bridgeRaw)
+                end)
+            end
+        end
         if Preview.generation ~= gen then return end
         Preview.loading = false
         if clip then
             Preview.cache[id] = clip
             Preview.clip, Preview.looping, Preview.message = clip, clip.loop, ""
         else
-            Preview.message = "No exported keyframes for #" .. id
+            Preview.message = bridgeErr or ("No available keyframes for #" .. id)
         end
     end)
 end
@@ -1251,7 +1298,7 @@ function Preview.drawPanel(px, py, pw, ph)
     Preview.viewport = {x=vx,y=vy,w=vw,h=vh}
     Preview.model(vx + 2, vy + 2, vw - 4, vh - 4)
     if Preview.loading then
-        txt("Loading keyframes...", vx + vw / 2, vy + 24, FS - 1, TH.sub, 46, true)
+        txt(fit(Preview.message, vw - 12, FS - 2), vx + vw / 2, vy + 24, FS - 2, TH.sub, 46, true)
     elseif not Preview.clip then
         txt("NO ANIMATION DATA", vx + vw / 2, vy + 24, FS - 1, TH.warn, 46, true, true)
         txt(fit(Preview.message, vw - 18, FS - 3), vx + vw / 2, vy + 44,
@@ -1289,7 +1336,7 @@ function Preview.drawPanel(px, py, pw, ph)
     rect(ix, py3 + 37, iw, 4, TH.line, 40, 2)
     rect(ix, py3 + 37, math.max(1, iw * progress), 4, TH.accent, 41, 2)
     local position = Preview.clip and string.format("%.1f / %.1f s", Preview.playTime, Preview.clip.duration)
-        or "Export keyframes to enable playback"
+        or "Automatic playback requires Studio bridge"
     txt(position, ix, py3 + 56, FS - 3, TH.sub, 42)
     input(ix, py3 + 69, iw - 88, 28, Preview, "typedId", "pvtyped", "Animation ID", 20, nil, Preview.playTyped)
     button(ix + iw - 80, py3 + 69, 80, 28, "Preview ID", "pvloadid", Preview.playTyped,
