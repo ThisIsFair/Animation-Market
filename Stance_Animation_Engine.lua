@@ -333,6 +333,24 @@ local PINNED_OFFSETS = {
 local okVersion, activeClient = pcall(function() return getrbxversion() end)
 if not okVersion then activeClient = nil end
 local offsets=PINNED_OFFSETS[activeClient or ""]
+local offsetSource=offsets and "pinned" or nil
+if not offsets and type(activeClient)=="string" and activeClient:match("^version%-%x+$") and type(httpget)=="function" then
+    local fetched,body=pcall(httpget,"https://offsets.imtheo.lol/Offsets.json")
+    if fetched and type(body)=="string" and #body>=100 and #body<=250000 then
+        local parsed,data=pcall(function() return HttpService:JSONDecode(body) end)
+        if parsed and type(data)=="table" and data["Roblox Version"]==activeClient and type(data.Offsets)=="table" then
+            local misc=data.Offsets.Misc
+            local humanoid=data.Offsets.Humanoid
+            local anim=type(misc)=="table" and misc.AnimationId or nil
+            local stand=type(humanoid)=="table" and humanoid.PlatformStand or nil
+            if type(anim)=="number" and anim%8==0 and anim>=0x80 and anim<=0x400
+                and type(stand)=="number" and stand%1==0 and stand>=0x100 and stand<=0x800 then
+                offsets={PlatformStand=stand,AnimationId=anim}
+                offsetSource="theo"
+            end
+        end
+    end
+end
 local PLATFORMSTAND_OFFSET=offsets and offsets.PlatformStand or nil
 local ANIMATION_ID_OFFSET=offsets and offsets.AnimationId or nil
 local isUIVisible = false
@@ -340,8 +358,11 @@ local toggleDebounce = false
 local CONFIG_FOLDER = "SpooferConfig"
 local CONFIG_FILE = CONFIG_FOLDER .. "\\Settings.json"
 if offsets then
-    print(string.format("[Spoofer] Pinned Roblox %s | PlatformStand=0x%X | AnimId=0x%X",
-        tostring(activeClient),PLATFORMSTAND_OFFSET,ANIMATION_ID_OFFSET))
+    print(string.format("[Spoofer] %s Roblox %s | PlatformStand=0x%X | AnimId=0x%X",
+        offsetSource=="theo" and "Auto-resolved" or "Pinned",tostring(activeClient),PLATFORMSTAND_OFFSET,ANIMATION_ID_OFFSET))
+else
+    warn("[Spoofer] Unsupported Roblox build "..tostring(activeClient)..
+        "; memory writes disabled until offsets are verified for this build")
 end
 
 local function read_std_string(addr)
@@ -1077,7 +1098,17 @@ local function capability()
         local hum=c and c:FindFirstChild("Humanoid")
         local animate=c and c:FindFirstChild("Animate")
         if not hum or not animate then return "Character Humanoid/Animate missing" end
-        if type(hum.Address)~="number" then return "Humanoid.Address missing" end
+        if type(hum.Address)~="number" or hum.Address<65536 then return "Humanoid.Address missing" end
+        local stand=memory_read("byte",hum.Address+PLATFORMSTAND_OFFSET)
+        if stand~=0 and stand~=1 then return "PlatformStand memory is not boolean (0/1)" end
+        if offsetSource=="theo" then
+            local okStand,nativeStand=pcall(function() return hum.PlatformStand end)
+            if okStand and type(nativeStand)=="boolean" and stand~=(nativeStand and 1 or 0) then
+                return "Auto-resolved PlatformStand offset conflicts with readable Roblox property"
+            end
+        end
+        local seen={}
+        local valid=0
         for _,name in ipairs({"run","walk","idle"}) do
             local folder=animate:FindFirstChild(name)
             if folder then
@@ -1085,18 +1116,37 @@ local function capability()
                 for _,anim in ipairs(anims) do
                     local addr,old=validateAnimationMemory(anim)
                     if addr then
-                        local value=memory_read("byte",hum.Address+PLATFORMSTAND_OFFSET)
-                        if value~=0 and value~=1 then return "PlatformStand memory is not boolean (0/1)" end
-                        return nil
+                        if offsetSource~="theo" then return nil end
+                        local memoryId=old:match("^rbxassetid://(%d+)$")
+                            or old:match("^http://www%.roblox%.com/asset/%?id=(%d+)$")
+                            or old:match("^https://www%.roblox%.com/asset/%?id=(%d+)$")
+                        if not memoryId then
+                            return "Auto-resolved AnimationId memory is not a canonical Roblox asset URI"
+                        end
+                        local nativeId=probeNativeId(anim)
+                        if nativeId and nativeId~=memoryId then
+                            return "Auto-resolved AnimationId offset conflicts with readable Roblox property"
+                        end
+                        if not seen[addr] then
+                            seen[addr]=true
+                            valid=valid+1
+                        end
                     end
                 end
             end
         end
-        return "No valid AnimationId string found in Animate memory"
+        if offsetSource=="theo" then
+            if valid<2 then
+                return "Auto-resolved offsets require two readable AnimationId instances before writes"
+            end
+        else
+            return "No valid AnimationId string found in Animate memory"
+        end
+        return nil
     end)
     if not ok then return false,"Capability read failed: "..tostring(reason) end
     if reason then return false,reason end
-    return true,"Version-pinned memory engine available (VISUAL playback unverified)"
+    return true,(offsetSource=="theo" and "Auto-resolved offsets validated by read-only memory checks" or "Version-pinned memory engine available").." (VISUAL playback unverified)"
 end
 local stanceOriginals = {}
 local stanceEngineAlive = true
