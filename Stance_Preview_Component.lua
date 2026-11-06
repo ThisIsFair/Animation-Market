@@ -71,6 +71,50 @@ local function previewDecode(raw, id)
     if valid == 0 then return nil end
     return {animationId = id, duration = duration, tracks = tracks, loop = data.loop ~= false}
 end
+local function previewNative(id)
+    local ok, obj = pcall(function()
+        return game:GetService("AnimationClipProvider"):GetAnimationClipAsync("rbxassetid://" .. id)
+    end)
+    if not ok or not obj then return nil end
+    local seqOk, isSeq = pcall(function() return obj:IsA("KeyframeSequence") end)
+    if not seqOk or not isSeq then return nil end
+    local keyOk, keys = pcall(function() return obj:GetKeyframes() end)
+    if not keyOk or type(keys) ~= "table" then return nil end
+    local wanted = {}
+    for _, spec in ipairs(PREVIEW_PARTS) do wanted[spec[1]] = true end
+    local tracks, duration = {}, 0
+    for _, frame in ipairs(keys) do
+        local tm = tonumber(frame.Time)
+        if tm and tm >= 0 and tm < 240 then
+            duration = math.max(duration, tm)
+            local got, descendants = pcall(function() return frame:GetDescendants() end)
+            if got and type(descendants) == "table" then
+                for _, pose in ipairs(descendants) do
+                    if wanted[pose.Name] and pose:IsA("Pose") then
+                        local cfOK, components = pcall(function() return {pose.CFrame:GetComponents()} end)
+                        if cfOK and #components == 12 then
+                            local track = tracks[pose.Name]
+                            if not track then track = {}; tracks[pose.Name] = track end
+                            track[#track + 1] = {tm, components}
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if next(tracks) == nil then return nil end
+    for _, track in pairs(tracks) do
+        table.sort(track, function(a, b) return a[1] < b[1] end)
+    end
+    local looping = true
+    pcall(function() looping = obj.Loop == true end)
+    local okJson, json = pcall(function()
+        return HttpService:JSONEncode({version = 1, animationId = id, duration = math.max(duration, 0.2),
+            loop = looping, tracks = tracks})
+    end)
+    if not okJson or type(json) ~= "string" then return nil end
+    return previewDecode(json, id), json
+end
 function Preview.load(id)
     if not id or not tostring(id):match("^%d+$") then
         Preview.clip = nil; Preview.animationId = nil; Preview.message = "No animation ID in this state"; return
@@ -99,6 +143,13 @@ function Preview.load(id)
         local path = PREVIEW_ROOT .. id .. ".json"
         pcall(function() if isfile(path) then raw = readfile(path) end end)
         local clip = raw and previewDecode(raw, id)
+        if not clip then
+            local native, encoded = previewNative(id)
+            if native then
+                clip = native
+                pcall(function() writefile(path, encoded) end)
+            end
+        end
         if not clip then
             local ok, remote = pcall(httpget, PREVIEW_REMOTE .. id .. ".json")
             if ok and type(remote) == "string" and #remote > 0 and #remote < 1800000 then
@@ -200,12 +251,15 @@ function Preview.model(vx, vy, vw, vh)
         end
         for _, face in ipairs(PREVIEW_FACES) do
             local a,b,c,d = projected[face[1]],projected[face[2]],projected[face[3]],projected[face[4]]
-            local brightness = face[5]
-            if name == "Head" then brightness = brightness * 1.12 end
-            if name:find("Foot",1,true) then brightness = brightness * 0.77 end
-            local tone = mix(TH.bg, TH.text, math.min(0.92, brightness))
-            triangles[#triangles+1] = {z = (a[3]+b[3]+c[3]+d[3])*0.25,
-                a = a,b = b,c = c,d = d,col = tone}
+            local area = (b[1]-a[1])*(c[2]-a[2]) - (b[2]-a[2])*(c[1]-a[1])
+            if area < -0.01 then
+                local brightness = face[5]
+                if name == "Head" then brightness = brightness * 1.12 end
+                if name:find("Foot",1,true) then brightness = brightness * 0.77 end
+                local tone = mix(TH.bg, TH.text, math.min(0.92, brightness))
+                triangles[#triangles+1] = {z = (a[3]+b[3]+c[3]+d[3])*0.25,
+                    a = a,b = b,c = c,d = d,col = tone}
+            end
         end
     end
     table.sort(triangles,function(a,b) return a.z > b.z end)
