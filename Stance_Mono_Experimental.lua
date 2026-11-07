@@ -467,6 +467,27 @@ if type(httpget) == "function" and type(loadstring) == "function" then
 else
     engineError = "Matcha HTTP/loadstring is unavailable"
 end
+local PlaybackHealth = {report=nil,nextAt=0,rig="Loading",lastWarnChar=nil}
+local function refreshPlaybackHealth(force)
+    local now=tick()
+    if not force and now<PlaybackHealth.nextAt then return end
+    PlaybackHealth.nextAt=now+1.5
+    local ok,report=pcall(function()
+        if not engine or type(engine.Status)~="function" then return nil end
+        return engine.Status()
+    end)
+    if ok and type(report)=="table" then
+        PlaybackHealth.report=report
+        PlaybackHealth.rig=report.rig or "Loading"
+    else
+        PlaybackHealth.report={available=false,reason=engineError or "Engine status unavailable"}
+    end
+    local char=LocalPlayer and LocalPlayer.Character
+    if PlaybackHealth.rig=="R6" and char and char~=PlaybackHealth.lastWarnChar and State.equipped~=nil then
+        PlaybackHealth.lastWarnChar=char
+        toast("R6 character detected. Marketplace animations require R15.", "warn")
+    end
+end
 local function invokeEngine(method, payload)
     assert(engine and type(engine[method]) == "function", engineError or "Animation engine unavailable")
     local ok, reason = engine[method](payload)
@@ -1936,10 +1957,27 @@ local function renderWindow()
     button(sx, hy - 15, 78, 30, "Search", "gsearch", function()
         UI.page = "Browse"; focusInput("bsearch")
     end, "soft", 20, "Search animation packs")
-    local st = State.equipped and "Applied" or "Default"
-    local stw = tw(st, FS - 3)
-    txt(st, sx - 18 - stw, hy, FS - 3, TH.sub, 14)
-    circle(sx - 18 - stw - 12, hy, 3, State.equipped and TH.good or TH.mute, 14)
+    local hr=PlaybackHealth.report
+    local rig=PlaybackHealth.rig
+    local st=rig=="R6" and "R6 / Blocked" or (rig=="R15" and "R15 / Ready" or "Rig / Loading")
+    local healthColor=TH.sub
+    if hr and not hr.available then
+        st=rig=="R6" and "R6 / Blocked" or "Engine / Blocked"
+        healthColor=TH.warn
+    elseif hr and hr.available and State.equipped then
+        local total,synced=hr.total or 0,hr.synced or 0
+        st=total>0 and ("R15 / " .. synced .. "/" .. total) or "R15 / Pending"
+        healthColor=total>0 and synced==total and TH.good or TH.warn
+    elseif hr and hr.available then
+        healthColor=TH.good
+    end
+    local stw=tw(st,FS - 3)
+    local hx=sx-18-stw
+    txt(st,hx,hy,FS-3,healthColor,14)
+    circle(hx-12,hy,3,healthColor,14)
+    reg(hx-17,hy-16,stw+19,32,"health",nil,
+        hr and (tostring(hr.reason or "") .. " | Sync refers to memory IDs, not visual playback")
+        or "Checking Roblox rig and memory offsets")
     txt("S T A N C E", CX, hy, FS - 3, TH.text, 14)
     txt(PAGE_TITLE[UI.page], CX, 112, FS + 20, TH.text, 14)
     txt(PAGE_SUB[UI.page], CX, 146, FS - 2, TH.mute, 14)
@@ -2327,28 +2365,64 @@ local function processHotkeys()
         end
     end
 end
-local respawn = { char = nil, pending = false, at = 0, giveUp = 0, nextPoll = 0 }
+local respawn = { char = nil, pending = false, at = 0, giveUp = 0, nextPoll = 0, tries = 0 }
 local function watchRespawn()
-    local now = tick()
-    if now >= respawn.nextPoll then
-        respawn.nextPoll = now + 0.25
-        local ok, ch = pcall(function() return LocalPlayer.Character end)
-        if ok and ch and ch ~= respawn.char then
-            respawn.char = ch
-            respawn.pending = true
-            respawn.at = now + 1.0
-            respawn.giveUp = now + 6
+    local now=tick()
+    if now>=respawn.nextPoll then
+        respawn.nextPoll=now+0.25
+        local ok,char=pcall(function() return LocalPlayer.Character end)
+        if ok and char and char~=respawn.char then
+            respawn.char=char
+            respawn.pending=true
+            respawn.at=now+0.8
+            respawn.giveUp=now+22
+            respawn.tries=0
+            refreshPlaybackHealth(true)
         end
     end
-    if respawn.pending and now >= respawn.at then
-        local ready = false
-        pcall(function() ready = respawn.char:FindFirstChild("Humanoid") ~= nil end)
-        if ready or now >= respawn.giveUp then
-            respawn.pending = false
-            if State.autoReapply and State.equipped ~= nil then
-                if reapply(true) then toast("Reapplied after respawn: " .. (equippedLabel() or ""), "info") end
+    if not respawn.pending or now<respawn.at then return end
+    if not State.autoReapply or State.equipped==nil then
+        respawn.pending=false
+        return
+    end
+    respawn.at=now+0.85
+    local ok,rig,ready=pcall(function()
+        local char=respawn.char
+        if not char or LocalPlayer.Character~=char then return "Loading",false end
+        if char:FindFirstChild("Torso") and not char:FindFirstChild("LowerTorso") then return "R6",false end
+        if not char:FindFirstChild("LowerTorso") or not char:FindFirstChild("UpperTorso") then return "Loading",false end
+        if not char:FindFirstChild("Humanoid") then return "R15",false end
+        local animate=char:FindFirstChild("Animate")
+        if not animate then return "R15",false end
+        local count=0
+        for _,name in ipairs({"run","walk","idle"}) do
+            local folder=animate:FindFirstChild(name)
+            if folder then
+                for _,child in ipairs(folder:GetChildren()) do
+                    if child:IsA("Animation") then count=count+1 end
+                end
             end
         end
+        return "R15",count>=2
+    end)
+    if ok and rig=="R6" then
+        respawn.pending=false
+        toast("R6 rig detected after respawn. Select R15 to use Stance animations.", "warn")
+        return
+    end
+    if ok and ready then
+        respawn.tries=respawn.tries+1
+        if reapply(true) then
+            respawn.pending=false
+            refreshPlaybackHealth(true)
+            toast("Animation reapply queued after respawn", "info")
+            return
+        end
+        respawn.at=now+math.min(3,0.85+respawn.tries*0.4)
+    end
+    if now>=respawn.giveUp then
+        respawn.pending=false
+        toast("Respawn animation objects not ready; use Reapply when R15 loads", "warn")
     end
 end
 local function drawWheel()
@@ -2443,6 +2517,7 @@ local function step(dt)
     FS = State.textSize
     S = State.scale
     local vp = workspace.CurrentCamera.ViewportSize
+    refreshPlaybackHealth(false)
     Extras.preview.step(dt)
     local baseW = State.w
     local eased = 1 - (1 - Extras.preview.progress) ^ 3
