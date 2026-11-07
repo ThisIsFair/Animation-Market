@@ -1575,19 +1575,23 @@ local function renderMix(x, y, w, h)
     txt(n .. (w < 690 and "/8 set" or "/8 states assigned"), x + 2, y + 16, FS, TH.sub, 14)
     local bx = x + w
     bx = bx - 100; button(bx, y, 100, 32, "Apply mix", "apply", applyMix, "primary", 20)
-    bx = bx - 8 - 112
-    button(bx, y, 112, 32, "Randomize", "randomize", Extras.randomizeMix, "soft", 20,
+    bx = bx - 8 - 104
+    button(bx, y, 104, 32, "Randomize", "randomize", Extras.randomizeMix, "soft", 20,
         "Shuffle unlocked states, then Apply or Save")
-    local sw2 = btnW("Save as preset")
+    local sw2 = btnW("Save preset")
     bx = bx - 8 - sw2
-    button(bx, y, sw2, 32, "Save as preset", "tosave", function()
+    button(bx, y, sw2, 32, "Save preset", "tosave", function()
         UI.page = "Presets"; UI.pName = ""; focusInput("pname")
     end, "soft", 20, "Create a preset from this mix")
-    local cw = btnW("Clear all")
+    local cw = btnW("Clear")
     bx = bx - 8 - cw
-    button(bx, y, cw, 32, "Clear all", "clrall", function()
+    button(bx, y, cw, 32, "Clear", "clrall", function()
         State.mix = {}; markDirty(); toast("Mix cleared", "info")
     end, "danger", 20)
+    button(x+72, y, 68, 32, "Codes", "mixcodes", function()
+        UI.codeOpen=not UI.codeOpen
+        if UI.codeOpen then UI.codeInput="" else blur() end
+    end, UI.codeOpen and "accent" or "soft", 20, "Copy or import Mix & Match share codes")
     local top = y + 44
     local bodyH = h - 44
     local gap = 6
@@ -1664,6 +1668,20 @@ local function renderMix(x, y, w, h)
     end
     footer(px + 12, top + bodyH - footH - 10, pw - 24, "mPage", pages, total,
         total > 0 and (i0 + 1) or 0, math.min(i0 + per, total), "mix", false)
+    if UI.codeOpen then
+        local pw2=math.min(500,w-20)
+        local px2=x+(w-pw2)/2
+        local py2=y+46
+        card(px2,py2,pw2,108,18,40,nil,TH.ctl)
+        txt("SHARE MIX CODE",px2+14,py2+22,FS-2,TH.text,46,false,true)
+        button(px2+pw2-116,py2+7,102,26,"Copy mix","codecopy",copyMixCode,"primary",46,
+            "Copy a compact code for the current mix")
+        input(px2+14,py2+56,pw2-180,30,UI,"codeInput","codeinput","Enter Stance s1 code",46,nil,importMixCode)
+        button(px2+pw2-156,py2+56,68,30,"Paste","codepaste",pasteMixCode,"soft",46,
+            "Paste if this Matcha build supports clipboard reading")
+        button(px2+pw2-80,py2+56,66,30,"Load","codeload",importMixCode,"primary",46,
+            "Import this mix without automatically equipping it")
+    end
 end
 local function findPreset(id)
     for i, p in ipairs(State.presets) do if p.id == id then return p, i end end
@@ -2274,12 +2292,12 @@ local function handleKeys(dt)
             if shift then c = SHIFT_MAP[vk] or ch:upper() end
             if typingVK ~= vk then
                 typingVK = vk; holdT = 0.35
-                edit(function(s) if #s < 40 then return s .. c end return s end)
+                edit(function(s) if #s < (e.k=="codeInput" and 240 or 40) then return s .. c end return s end)
             else
                 holdT = holdT - dt
                 if holdT <= 0 then
                     holdT = 0.045
-                    edit(function(s) if #s < 40 then return s .. c end return s end)
+                    edit(function(s) if #s < (e.k=="codeInput" and 240 or 40) then return s .. c end return s end)
                 end
             end
             return
