@@ -467,6 +467,9 @@ if type(httpget) == "function" and type(loadstring) == "function" then
 else
     engineError = "Matcha HTTP/loadstring is unavailable"
 end
+if engine and type(engine.SetAutoReapply)=="function" then
+    pcall(engine.SetAutoReapply,State.autoReapply)
+end
 local PlaybackHealth = {report=nil,nextAt=0,rig="Loading",lastWarnChar=nil}
 local function refreshPlaybackHealth(force)
     local now=tick()
@@ -1847,7 +1850,11 @@ local function renderControls(x, y, w, h)
     end
     row("Auto-reapply on respawn", "Re-equips your animation when you respawn or rejoin", function(rE, ty)
         segmented(rE - 124, ty, 124, 30, { {true, "On"}, {false, "Off"} }, State.autoReapply,
-            function(v) State.autoReapply = v; markDirty() end, 20, "autore")
+            function(v)
+                State.autoReapply=v
+                if engine and type(engine.SetAutoReapply)=="function" then pcall(engine.SetAutoReapply,v) end
+                markDirty()
+            end, 20, "autore")
     end)
     row("Swap wheel shows", "What the wheel offers", function(rE, ty)
         segmented(rE - 244, ty, 244, 30, { {"both", "Both"}, {"favs", "Favorites"}, {"presets", "Presets"} },
