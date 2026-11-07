@@ -1166,8 +1166,17 @@ local function capability()
 end
 local stanceOriginals = {}
 local stanceEngineAlive = true
-local function applyActiveAnimations()
+local autoReapplyEnabled = true
+local function applyActiveAnimations(explicit)
     if applyBusy or not next(activeSpoofs) then return end
+    if not explicit and not autoReapplyEnabled and appliedCharacterAddress then
+        local ok,address=pcall(function()
+            local player=game:GetService("Players").LocalPlayer
+            local character=player and player.Character
+            return character and character.Address
+        end)
+        if not ok or address~=appliedCharacterAddress then return end
+    end
     local can,why=capability()
     if not can then logAnimationIssue("capability",tostring(why));return end
     applyBusy=true
@@ -1232,7 +1241,7 @@ local function applyActiveAnimations()
             if worked then
                 playbackStats.wrote=playbackStats.wrote+1
                 activeWriteStamp[item.key]=true
-                retryAfter[item.key]=nil
+                retryAfter[item.key]=tick()+1.5
                 retryCounts[item.key]=nil
                 resultLine=tostring(item.state).." "..item.id.." = "..tostring(mode).." (memory only)"
                 playbackStats.last="Applied "..item.id.." via "..tostring(mode).."; visual motion unverified"
@@ -1780,7 +1789,7 @@ _G.MatchaAnimationChangerPlayback = {
         local pack=market.packs["bundle:"..tostring(bundleId)]
         if not pack or not pack.rows then return false,"No resolved animation ID map for this bundle" end
         local applied=marketApply(pack,nil)
-        if applied then task.spawn(applyActiveAnimations) end
+        if applied then task.spawn(function() applyActiveAnimations(true) end) end
         return applied
     end,
     EquipMix = function(mixByState)
@@ -1806,7 +1815,7 @@ _G.MatchaAnimationChangerPlayback = {
         for state,ids in pairs(staged) do activeSpoofs[state]=ids end
         activeWriteStamp={}
         market.status="Queued Mix & Match: "..count.." state(s); playback unverified"
-        task.spawn(applyActiveAnimations)
+        task.spawn(function() applyActiveAnimations(true) end)
         return true
     end,
 }
@@ -1902,7 +1911,7 @@ local function stanceApplyIds(idsByState)
     activeWriteStamp = {}
     retryAfter = {}
     retryCounts = {}
-    task.spawn(applyActiveAnimations)
+    task.spawn(function() applyActiveAnimations(true) end)
     return true, "Queued " .. tostring(count) .. " animation states"
 end
 StanceEngine.ApplyStateIds = function(ids)
@@ -1916,6 +1925,10 @@ StanceEngine.Restore = function()
 end
 StanceEngine.Library = function()
     return market.ordered
+end
+StanceEngine.SetAutoReapply = function(enabled)
+    autoReapplyEnabled = enabled ~= false
+    return true
 end
 StanceEngine.Status = function()
     local ok,reason=capability()
