@@ -1,3 +1,11 @@
+# Retired experimental preview
+
+The active **Dev/Stance_Mono_Experimental.lua** no longer loads the Studio-dependent preview or its localhost bridge. This experiment was retired from the running UI because Stance is intended to work using only Matcha and a single loadstring.
+
+The helper files below are preserved for historical development reference only. They are not required for any current Dev feature.
+
+---
+
 # Stance Dev — Automatic 3D Animation Previews
 
 The preferred workflow is automatic **on demand**: selecting a marketplace pack's animation ID makes Stance queue the clip for extraction by a Studio companion and display it on its independent R15 mannequin. No individual JSON exports or typing asset IDs into Studio are needed. Your actual in-game character is never used as the preview rig.
