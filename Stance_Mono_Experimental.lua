@@ -19,7 +19,7 @@ local function defaultState()
         theme = "Mono", accent = 0, scale = 1, opacity = 1, textSize = 14,
         compact = false, rounded = true,
         x = 120, y = 60, w = 900, h = 680,
-        favs = {}, presets = {}, recent = {}, mix = {}, mixLocks = {}, equipped = nil,
+        favs = {}, presets = {}, recent = {}, mix = {}, mixLocks = {}, hiddenPacks = {}, equipped = nil,
         randSource = "all", autoReapply = true, wheelMode = "both", binds = {},
     }
 end
@@ -35,7 +35,7 @@ local function loadState()
     for k, v in pairs(d) do
         if State[k] == nil and k ~= "equipped" then State[k] = v end
     end
-    for _, k in ipairs({"favs", "presets", "recent", "mix", "mixLocks", "binds"}) do
+    for _, k in ipairs({"favs", "presets", "recent", "mix", "mixLocks", "hiddenPacks", "binds"}) do
         if type(State[k]) ~= "table" then State[k] = {} end
     end
     State.w = math.max(MIN_W, tonumber(State.w) or d.w)
@@ -315,7 +315,8 @@ local UI = {
     toasts = {}, buttons = {}, inputs = {}, prevInputs = {}, prevButtons = {},
     dragging = false, resizing = false, dx = 0, dy = 0, rx = 0, ry = 0,
     busyUntil = 0, tipId = nil, tipSince = 0, tipText = nil,
-    caches = {}, favVer = 0, recentVer = 0,
+    caches = {}, favVer = 0, recentVer = 0, blackVer = 0,
+    codeInput = "", codeOpen = false,
     W = 740, H = 540, W0 = 740,
     binding = nil, bindGuard = 0,
 }
@@ -522,6 +523,21 @@ local function toggleFav(id)
     table.insert(State.favs, 1, id)
     return true
 end
+local function isHiddenPack(id)
+    return State.hiddenPacks[tostring(id)] == true
+end
+local function toggleHiddenPack(p)
+    local id = tostring(p.id)
+    if isHiddenPack(id) then
+        State.hiddenPacks[id] = nil
+    else
+        State.hiddenPacks[id] = true
+    end
+    UI.blackVer = UI.blackVer + 1
+    UI.bPage,UI.fPage,UI.mPage = 1,1,1
+    markDirty()
+    toast(isHiddenPack(id) and ("Hidden " .. p.name .. " from browsing and Smart Mix") or ("Unhidden " .. p.name), "info")
+end
 local function newId() return tostring(math.floor(tick() * 1000)) .. tostring(math.random(100, 999)) end
 local function copySlots(src)
     local t = {}
@@ -683,7 +699,7 @@ function Extras.randomizeMix()
             local pool = Extras.candidates[slot]
             local candidates = {}
             for _, p in ipairs(pool) do
-                if allowed == nil or allowed[p.id] then candidates[#candidates + 1] = p.id end
+                if not isHiddenPack(p.id) and (allowed == nil or allowed[p.id]) then candidates[#candidates + 1] = p.id end
             end
             if #candidates == 0 then
                 skipped = skipped + 1
@@ -713,7 +729,7 @@ local function getList(kind)
     local filter = kind == "b" and UI.bFilter or "all"
     local state = kind == "b" and UI.bState or "All"
     local key = search .. "|" .. sort .. "|" .. UI.favVer .. "|" .. UI.recentVer .. "|"
-        .. filter .. "|" .. state
+        .. filter .. "|" .. state .. "|" .. UI.blackVer
     local c = UI.caches[kind]
     if c and c.key == key then return c.list end
     local s = search:lower()
@@ -736,12 +752,13 @@ local function getList(kind)
     for _, p in ipairs(src) do
         local matches = s == "" or p._ln:find(s, 1, true) or p.id:find(s, 1, true)
         if matches and (state == "All" or p.anims[state]) then
-            local eligible = filter == "all"
+            local eligible = filter == "hidden" or filter == "all"
                 or (filter == "complete" and p.states == #SLOTS)
                 or (filter == "partial" and p.states < #SLOTS)
                 or (filter == "favorites" and favorites[p.id])
                 or (filter == "recent" and recent[p.id])
-            if eligible then list[#list + 1] = p end
+            if eligible and ((filter == "hidden" and isHiddenPack(p.id))
+                or (filter ~= "hidden" and not isHiddenPack(p.id))) then list[#list + 1] = p end
         end
     end
     if sort == "name" then
@@ -759,13 +776,13 @@ local function getList(kind)
     return list
 end
 local function getMixList()
-    local key = UI.mixSel .. "|" .. UI.mSearch
+    local key = UI.mixSel .. "|" .. UI.mSearch .. "|" .. UI.blackVer
     local c = UI.caches.m
     if c and c.key == key then return c.list end
     local s = UI.mSearch:lower()
     local list = {}
     for _, p in ipairs(PACKS) do
-        if p.anims[UI.mixSel] and (s == "" or p._ln:find(s, 1, true)) then
+        if not isHiddenPack(p.id) and p.anims[UI.mixSel] and (s == "" or p._ln:find(s, 1, true)) then
             list[#list + 1] = p
         end
     end
@@ -1364,7 +1381,7 @@ local function renderPackList(x, y, w, h, kind)
         local filterW = w - 130
         segmented(x, y + 42, filterW, 30,
             { {"all", "All"}, {"complete", "8/8"}, {"partial", "Partial"},
-              {"favorites", "Saved"}, {"recent", "Recent"} },
+              {"favorites", "Saved"}, {"recent", "Recent"}, {"hidden", "Hidden"} },
             UI.bFilter, function(k) UI.bFilter = k; UI.bPage = 1 end, 20, "bf")
         local sx = x + filterW + 8
         button(sx, y + 42, w - filterW - 8, 30,
@@ -1414,8 +1431,14 @@ local function renderPackList(x, y, w, h, kind)
             local added = toggleFav(p.id)
             toast(added and "Saved to Favorites" or "Removed from Favorites", "info")
         end, fav and "accent" or "soft", 20)
+        local hideW = 54
+        local hideX = saveX - 6 - hideW
+        local hidden = isHiddenPack(p.id)
+        button(hideX, cy - 14, hideW, 28, hidden and "Show" or "Hide", "h" .. p.id, function()
+            toggleHiddenPack(p)
+        end, hidden and "accent" or "ghost", 20, hidden and "Restore this pack to browsing and randomizer" or "Hide from browsing and randomizer", FS - 2)
         local badgeW = 44
-        local badgeX = saveX - 10 - badgeW
+        local badgeX = hideX - 8 - badgeW
         local full = p.states == p.maxStates
         pill(badgeX, cy - 10, badgeW, 20, TH.line, TH.bg, 14)
         txt(p.states .. "/" .. p.maxStates, badgeX + badgeW / 2, cy, FS - 2, full and TH.sub or TH.warn, 17, true)
