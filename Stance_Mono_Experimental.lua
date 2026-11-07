@@ -21,6 +21,7 @@ local function defaultState()
         x = 120, y = 60, w = 900, h = 680,
         favs = {}, presets = {}, recent = {}, mix = {}, mixLocks = {}, hiddenPacks = {}, equipped = nil,
         randSource = "all", autoReapply = true, wheelMode = "both", binds = {},
+        emoteFavorites = {}, emoteChatFallback = false,
     }
 end
 local State = defaultState()
@@ -35,7 +36,7 @@ local function loadState()
     for k, v in pairs(d) do
         if State[k] == nil and k ~= "equipped" then State[k] = v end
     end
-    for _, k in ipairs({"favs", "presets", "recent", "mix", "mixLocks", "hiddenPacks", "binds"}) do
+    for _, k in ipairs({"favs", "presets", "recent", "mix", "mixLocks", "hiddenPacks", "binds", "emoteFavorites"}) do
         if type(State[k]) ~= "table" then State[k] = {} end
     end
     State.w = math.max(MIN_W, tonumber(State.w) or d.w)
@@ -317,6 +318,7 @@ local UI = {
     busyUntil = 0, tipId = nil, tipSince = 0, tipText = nil,
     caches = {}, favVer = 0, recentVer = 0, blackVer = 0,
     codeInput = "", codeOpen = false,
+    emoteSearch = "", emoteFilter = "all", emoteBusy = false,
     W = 740, H = 540, W0 = 740,
     binding = nil, bindGuard = 0,
 }
@@ -469,6 +471,22 @@ else
 end
 if engine and type(engine.SetAutoReapply)=="function" then
     pcall(engine.SetAutoReapply,State.autoReapply)
+end
+local EMOTE_ENGINE_URL = "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Emote_Engine.lua"
+local emoteEngine,emoteEngineError=nil,nil
+if type(_G.StanceEmoteEngineUnload)=="function" then pcall(_G.StanceEmoteEngineUnload) end
+if type(httpget)=="function" and type(loadstring)=="function" then
+    local ok,err=pcall(function()
+        local src=httpget(EMOTE_ENGINE_URL)
+        assert(type(src)=="string" and #src>1000,"Emote adapter download failed")
+        loadstring(src)()
+        emoteEngine=_G.StanceEmoteEngine
+        assert(type(emoteEngine)=="table" and type(emoteEngine.Play)=="function",
+            "Emote adapter did not initialize")
+    end)
+    if not ok then emoteEngineError=tostring(err) end
+else
+    emoteEngineError="Matcha HTTP/loadstring is unavailable"
 end
 local PlaybackHealth = {report=nil,nextAt=0,rig="Loading",lastWarnChar=nil}
 local function refreshPlaybackHealth(force)
@@ -943,6 +961,9 @@ local function icon(name, cx, cy, col, z)
         ln(-10, 0, 0, 5); ln(0, 5, 10, 0); ln(-10, 5, 0, 10); ln(0, 10, 10, 5)
     elseif name == "bookmark" then
         ln(-6, -9, 6, -9); ln(-6, -9, -6, 9); ln(6, -9, 6, 9); ln(-6, 9, 0, 4); ln(0, 4, 6, 9)
+    elseif name == "emote" then
+        dot(-6, -4, 2.1); dot(6, -4, 2.1)
+        ln(-10, 2, -7, 6); ln(-7, 6, -3, 8); ln(-3, 8, 3, 8); ln(3, 8, 7, 6); ln(7, 6, 10, 2)
     elseif name == "keys" then
         ln(-10, -6, 10, -6); ln(10, -6, 10, 6); ln(10, 6, -10, 6); ln(-10, 6, -10, -6)
         dot(-5, -2, 1.3); dot(0, -2, 1.3); dot(5, -2, 1.3); ln(-5, 3, 5, 3)
@@ -1549,23 +1570,131 @@ local function renderAppearance(x, y, w, h)
         buildTheme(); markDirty(); toast("Appearance reset", "info")
     end, "danger", 20)
 end
+local EMOTE_DEFAULTS = {
+    {"wave","Wave","Quick greeting"},
+    {"point","Point","Point something out"},
+    {"cheer","Cheer","Celebrate a moment"},
+    {"laugh","Laugh","A short reaction"},
+    {"dance","Dance","Classic Roblox dance"},
+    {"dance2","Dance 2","Another classic dance"},
+    {"dance3","Dance 3","Third classic dance"},
+}
+local function copyEmoteCommand(name)
+    if not emoteEngine or type(emoteEngine.Command)~="function" then
+        toast("Emote adapter unavailable","bad");return
+    end
+    local command,reason=emoteEngine.Command(name)
+    if not command then toast(reason or "Unknown emote","bad");return end
+    local ok=pcall(function() setclipboard(command) end)
+    toast(ok and ("Copied "..command.." to clipboard") or "Clipboard copy unavailable",ok and "good" or "bad")
+end
+local function toggleEmoteFavorite(name)
+    if State.emoteFavorites[name] then
+        State.emoteFavorites[name]=nil
+    else
+        State.emoteFavorites[name]=true
+    end
+    markDirty()
+end
+local function playStanceEmote(name)
+    if UI.emoteBusy then return end
+    if not emoteEngine or type(emoteEngine.Play)~="function" then
+        toast("Emote adapter unavailable: "..tostring(emoteEngineError),"bad")
+        return
+    end
+    UI.emoteBusy=true
+    local allowKeyboard=State.emoteChatFallback==true
+    local wasVisible=UI.visible
+    if allowKeyboard then
+        UI.visible=false
+        blur()
+        syncInput(true)
+    end
+    task.spawn(function()
+        if allowKeyboard then task.wait(0.16) end
+        local ok,success,detail=pcall(emoteEngine.Play,name,allowKeyboard)
+        UI.emoteBusy=false
+        if not ok or not success then
+            if wasVisible and allowKeyboard then UI.visible=true end
+            toast("Emote could not play: "..tostring(ok and detail or success),"warn")
+        elseif detail and tostring(detail):find("Keyboard command sent",1,true) then
+            toast(tostring(detail),"info")
+        else
+            toast("Emote requested: "..name,"good")
+            UI.visible=false
+            syncInput(true)
+        end
+    end)
+end
+local function renderEmotes(x,y,w,h)
+    txt("ROBLOX EMOTES",x+2,y+16,FS-1,TH.text,14,false,true)
+    button(x+w-174,y,174,30,State.emoteChatFallback and "Chat fallback: ON" or "Chat fallback: OFF",
+        "emoteFallback",function()
+            State.emoteChatFallback=not State.emoteChatFallback
+            markDirty()
+            toast(State.emoteChatFallback and "Experimental chat input enabled; may type into chat"
+                or "Chat input disabled; native method only","info")
+        end,State.emoteChatFallback and "accent" or "soft",20,
+        "Opt-in keyboard typing of /e commands when direct Roblox emote calls are unavailable")
+    input(x,y+38,w-180,30,UI,"emoteSearch","emoteSearchBox","Search emotes",20)
+    segmented(x+w-170,y+38,170,30,{{"all","All"},{"saved","Saved"}},
+        UI.emoteFilter,function(v) UI.emoteFilter=v end,20,"emoteFilter")
+    local list={}
+    local search=UI.emoteSearch:lower()
+    for _,emote in ipairs(EMOTE_DEFAULTS) do
+        if (UI.emoteFilter=="all" or State.emoteFavorites[emote[1]])
+            and (search=="" or emote[2]:lower():find(search,1,true)
+                or emote[1]:find(search,1,true)) then
+            list[#list+1]=emote
+        end
+    end
+    local gap,rowH=6,52
+    local cellW=(w-gap)/2
+    for i,emote in ipairs(list) do
+        local col=(i-1)%2
+        local row=math.floor((i-1)/2)
+        local rx=x+col*(cellW+gap)
+        local ry=y+80+row*(rowH+gap)
+        if ry+rowH<=y+h+2 then
+            card(rx,ry,cellW,rowH,13,12,nil,TH.ctl)
+            txt(fit(emote[2],cellW-164,FS),rx+12,ry+18,FS,TH.text,15,false,true)
+            txt(fit(emote[3],cellW-164,FS-3),rx+12,ry+38,FS-3,TH.mute,15)
+            local name=emote[1]
+            button(rx+cellW-132,ry+10,53,31,"Play","emotePlay"..name,function()
+                playStanceEmote(name)
+            end,"primary",20,"Try Roblox native emote; optional chat fallback")
+            button(rx+cellW-75,ry+10,42,31,"/e","emoteCopy"..name,function()
+                copyEmoteCommand(name)
+            end,"soft",20,"Copy /e command for Roblox chat")
+            button(rx+cellW-29,ry+10,23,31,State.emoteFavorites[name] and "*" or "+",
+                "emoteFav"..name,function() toggleEmoteFavorite(name) end,
+                State.emoteFavorites[name] and "accent" or "ghost",20,
+                State.emoteFavorites[name] and "Remove from saved emotes" or "Save emote")
+        end
+    end
+    if #list==0 then
+        emptyState(x,y+80,w,h-80,"No emotes found",
+            UI.emoteFilter=="saved" and "Save one from All to see it here." or "Try another search.")
+    end
+end
 local PAGES = {
     { "Home", "Home" }, { "Browse", "Browse" }, { "Favorites", "Favorites" }, { "MixMatch", "Mix" },
-    { "Presets", "Presets" }, { "Controls", "Controls" },
+    { "Presets", "Presets" }, { "Emotes", "Emotes" }, { "Controls", "Controls" },
 }
 local PAGE_TITLE = { Home = "Your workspace", Browse = "Browse", Favorites = "Favorites", MixMatch = "Mix & Match",
-    Presets = "Presets", Controls = "Controls", Appearance = "Settings" }
+    Presets = "Presets", Emotes = "Emotes (Dev)", Controls = "Controls", Appearance = "Settings" }
 local PAGE_SUB = {
     Home = "A clear view of your setup. Pick an animation, fine-tune it, swap fast.",
     Browse = "Browse real animation packs. Select Wear to equip one.",
     Favorites = "Your saved packs, one click away.",
     MixMatch = "Mix and match animations for each movement state.",
     Presets = "Save a mix and switch back to it any time.",
+    Emotes = "Try owned Roblox emotes. Move to cancel; /e copies the chat command.",
     Controls = "Hotkeys, the swap wheel and respawn behavior.",
     Appearance = "Theme, text size and layout.",
 }
 local PAGE_ICON = { Home = "home", Browse = "list", Favorites = "star", MixMatch = "layers",
-    Presets = "bookmark", Controls = "keys", Appearance = "sliders" }
+    Presets = "bookmark", Emotes = "emote", Controls = "keys", Appearance = "sliders" }
 local SB_X, SB_W = 14, 78
 local PANEL_X = SB_X + SB_W + 10
 local CX = PANEL_X + 26
@@ -1613,7 +1742,7 @@ local function renderHome(x, y, w, h)
     button(x + 20, py + 66, 140, 30, "Browse packs", "quickbrowse", function() UI.page = "Browse" end, "primary", 20)
     button(x + 168, py + 66, 124, 30, "Favorites", "quickfav", function() UI.page = "Favorites" end, "soft", 20)
     button(x + 300, py + 66, 138, 30, "Mix & Match", "quickmix", function() UI.page = "MixMatch" end, "soft", 20)
-    button(x + 446, py + 66, 140, 30, "Share mix", "quickcodes", function() UI.page="MixMatch"; UI.codeOpen=true end, "soft", 20)
+    button(x + 446, py + 66, 140, 30, "Emotes", "quickemotes", function() UI.page="Emotes" end, "soft", 20)
     local recentY = py + 112
     if #State.recent > 0 and recentY + 30 < py + ph then
         txt("RECENTLY EQUIPPED", x + 22, recentY, FS - 3, TH.mute, 14, false, true)
@@ -1654,7 +1783,8 @@ local function renderWindow()
             UI.page = key; UI.jump = ""; UI.binding = nil; blur()
         end)
     end
-    for i, pg in ipairs(PAGES) do nav(pg[1], pg[2], 66 + (i - 1) * 72) end
+    local navStep=H<655 and 63 or 72
+    for i, pg in ipairs(PAGES) do nav(pg[1], pg[2], 66 + (i - 1) * navStep) end
     nav("Appearance", "Settings", H - 14 - 58)
     local hy = 46
     local rE = CX + cw
@@ -1699,6 +1829,7 @@ local function renderWindow()
     elseif UI.page == "Favorites"  then renderPackList(CX, CT, cw, ch, "f")
     elseif UI.page == "MixMatch"   then renderMix(CX, CT, cw, ch)
     elseif UI.page == "Presets"    then renderPresets(CX, CT, cw, ch)
+    elseif UI.page == "Emotes"     then renderEmotes(CX, CT, cw, ch)
     elseif UI.page == "Controls"   then renderControls(CX, CT, cw, ch)
     elseif UI.page == "Appearance" then renderAppearance(CX, CT, cw, ch)
     end
@@ -2385,6 +2516,7 @@ _G.StanceUnload = function()
     casSet(false)
     _G.StanceDevStats = nil
     if type(_G.StanceEngineUnload) == "function" then pcall(_G.StanceEngineUnload) end
+    if type(_G.StanceEmoteEngineUnload) == "function" then pcall(_G.StanceEmoteEngineUnload) end
 end
 function Scheduler.tick(name)
     if not alive then return end
