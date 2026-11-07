@@ -744,6 +744,95 @@ function Extras.randomizeMix()
     if skipped > 0 then msg = msg .. ", " .. skipped .. " unavailable" end
     toast(msg, skipped > 0 and "warn" or "good")
 end
+local MIX_CODE_DIGITS="0123456789abcdefghijklmnopqrstuvwxyz"
+local function toMixBase36(n)
+    if type(n)~="number" or n<0 or n>9007199254740991 or n%1~=0 then return nil end
+    local out=""
+    repeat
+        local d=n%36
+        out=MIX_CODE_DIGITS:sub(d+1,d+1)..out
+        n=math.floor(n/36)
+    until n==0
+    return out
+end
+local function mixCodeChecksum(body)
+    local sum=17
+    for i=1,#body do sum=(sum*31+body:byte(i))%46656 end
+    return toMixBase36(sum)
+end
+local function encodeMixCode(slots)
+    local parts={"s1"}
+    for _,slot in ipairs(SLOTS) do
+        local id=slots[slot]
+        if id==nil then
+            parts[#parts+1]="x"
+        else
+            local idText=tostring(id)
+            if not idText:match("^%d+$") then return nil,"Non-numeric pack ID" end
+            local token=toMixBase36(tonumber(idText))
+            if not token then return nil,"Pack ID too large to encode" end
+            parts[#parts+1]=token
+        end
+    end
+    local body=table.concat(parts,"-")
+    return body.."-"..mixCodeChecksum(body)
+end
+local function decodeMixCode(value)
+    if type(value)~="string" or #value>240 then return nil,"Invalid code length" end
+    local clean=value:lower():gsub("%s+","")
+    if not clean:match("^[a-z0-9%-]+$") then return nil,"Invalid code characters" end
+    local parts={}
+    for item in clean:gmatch("[^%-]+") do parts[#parts+1]=item end
+    if #parts~=10 or parts[1]~="s1" then return nil,"Expected a Stance s1 mix code" end
+    local body=table.concat(parts,"-",1,9)
+    if parts[10]~=mixCodeChecksum(body) then return nil,"Invalid code checksum" end
+    local result,count={},0
+    for i,slot in ipairs(SLOTS) do
+        local token=parts[i+1]
+        if token~="x" then
+            if not token:match("^[0-9a-z]+$") then return nil,"Invalid state token" end
+            local valueId=tonumber(token,36)
+            if not valueId or valueId>9007199254740991 or valueId<0 then return nil,"Invalid pack ID" end
+            local id=string.format("%.0f",valueId)
+            local pack=PACK_BY_ID[id]
+            if not pack or not pack.anims[slot] then
+                return nil,"Unavailable pack/state for "..SLOT_LABEL[slot]..": "..id
+            end
+            result[slot]=id
+            count=count+1
+        end
+    end
+    if count==0 then return nil,"Shared mix has no animation states" end
+    return result
+end
+local function copyMixCode()
+    local code,err=encodeMixCode(State.mix)
+    if not code then toast(err,"bad");return end
+    local ok=pcall(function() setclipboard(code) end)
+    UI.codeInput=code
+    toast(ok and "Mix code copied to clipboard" or "Clipboard unavailable; code shown below",ok and "good" or "warn")
+end
+local function pasteMixCode()
+    if type(getclipboard)~="function" then
+        toast("Clipboard reading unsupported; enter the code manually","warn")
+        return
+    end
+    local ok,content=pcall(getclipboard)
+    if not ok or type(content)~="string" or #content>240 then
+        toast("Clipboard does not contain a valid-sized mix code","bad")
+        return
+    end
+    UI.codeInput=content
+end
+local function importMixCode()
+    local slots,reason=decodeMixCode(UI.codeInput)
+    if not slots then toast(reason,"bad");return end
+    State.mix=slots
+    UI.codeOpen=false
+    blur()
+    markDirty()
+    toast("Mix imported. Press Apply mix to equip.","good")
+end
 local function getList(kind)
     local search = (kind == "b") and UI.bSearch or UI.fSearch
     local sort = (kind == "b") and UI.bSort or "saved"
