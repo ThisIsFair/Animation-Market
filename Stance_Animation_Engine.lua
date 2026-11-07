@@ -1015,6 +1015,7 @@ end
 local activeSpoofs={}
 local activeWriteStamp={}
 local retryAfter={}
+local retryCounts={}
 local appliedCharacterAddress=nil
 local reportedAnimationIssue={}
 local playbackStats={wrote=0,failed=0,pulses=0,last="No animation selection submitted",recentResults={}}
@@ -1038,6 +1039,15 @@ local function findAnimationChildren(folder)
 
     table.sort(result,function(a,b) return tostring(a.Name)<tostring(b.Name) end)
     return result
+end
+local function characterRig(character)
+    if not character then return "Loading" end
+    local ok,rig=pcall(function()
+        if character:FindFirstChild("LowerTorso") and character:FindFirstChild("UpperTorso") then return "R15" end
+        if character:FindFirstChild("Torso") then return "R6" end
+        return "Loading"
+    end)
+    return ok and rig or "Loading"
 end
 local function probeNativeId(anim)
     local ok,uri=pcall(function() return anim.AnimationId end)
@@ -1098,6 +1108,9 @@ local function capability()
     local ok,reason=pcall(function()
         local player=game:GetService("Players").LocalPlayer
         local c=player and player.Character
+        local rig=characterRig(c)
+        if rig=="R6" then return "R6 rig detected; Stance marketplace animations require R15" end
+        if rig~="R15" then return "R15 character parts are not ready" end
         local hum=c and c:FindFirstChild("Humanoid")
         local animate=c and c:FindFirstChild("Animate")
         if not hum or not animate then return "Character Humanoid/Animate missing" end
@@ -1166,7 +1179,7 @@ local function applyActiveAnimations()
     if not hum or not animate then applyBusy=false;return end
     if character.Address~=appliedCharacterAddress then
         appliedCharacterAddress=character.Address
-        activeWriteStamp={};retryAfter={};stanceOriginals={}
+        activeWriteStamp={};retryAfter={};retryCounts={};stanceOriginals={}
     end
     local pending={}
     local now=tick()
@@ -1188,7 +1201,7 @@ local function applyActiveAnimations()
                             local expected="http://www.roblox.com/asset/?id="..idText
                             local key=folderName..":"..tostring(anim.Address)..":"..idText
 
-                            if existing~=expected and not activeWriteStamp[key] and not retryAfter[key] then
+                            if existing~=expected and (not retryAfter[key] or now>=retryAfter[key]) then
                                 pending[#pending+1]={anim=anim,id=idText,key=key,state=folderName}
                             end
                         else
@@ -1219,11 +1232,14 @@ local function applyActiveAnimations()
             if worked then
                 playbackStats.wrote=playbackStats.wrote+1
                 activeWriteStamp[item.key]=true
+                retryAfter[item.key]=nil
+                retryCounts[item.key]=nil
                 resultLine=tostring(item.state).." "..item.id.." = "..tostring(mode).." (memory only)"
                 playbackStats.last="Applied "..item.id.." via "..tostring(mode).."; visual motion unverified"
             else
                 playbackStats.failed=playbackStats.failed+1
-                retryAfter[item.key]=true   
+                retryCounts[item.key]=(retryCounts[item.key] or 0)+1
+                retryAfter[item.key]=tick()+math.min(12,1.5*2^math.min(3,retryCounts[item.key]-1))
                 resultLine=tostring(item.state).." "..item.id.." FAILED: "..tostring(mode)
                 logAnimationIssue(item.key,resultLine)
                 playbackStats.last="Skipped "..item.id..": "..tostring(mode)
@@ -1812,6 +1828,7 @@ local function stanceRestoreTracked()
     activeSpoofs = {}
     activeWriteStamp = {}
     retryAfter = {}
+    retryCounts = {}
     local can, reason = capability()
     if not can then
         activeSpoofs = previous
@@ -1884,6 +1901,7 @@ local function stanceApplyIds(idsByState)
     activeSpoofs = staged
     activeWriteStamp = {}
     retryAfter = {}
+    retryCounts = {}
     task.spawn(applyActiveAnimations)
     return true, "Queued " .. tostring(count) .. " animation states"
 end
@@ -1900,8 +1918,37 @@ StanceEngine.Library = function()
     return market.ordered
 end
 StanceEngine.Status = function()
-    local ok, reason = capability()
-    return {available=ok,reason=reason,written=playbackStats.wrote,failed=playbackStats.failed}
+    local ok,reason=capability()
+    local rig="Loading"
+    local synced,total,requested=0,0,0
+    pcall(function()
+        local player=game:GetService("Players").LocalPlayer
+        local character=player and player.Character
+        rig=characterRig(character)
+        local animate=character and character:FindFirstChild("Animate")
+        if animate then
+            for state,ids in pairs(activeSpoofs) do
+                requested=requested+1
+                local folder=animate:FindFirstChild(state)
+                if folder and type(ids)=="table" then
+                    local anims=findAnimationChildren(folder)
+                    for i,id in ipairs(ids) do
+                        local anim=anims[i]
+                        if anim then
+                            total=total+1
+                            local address=memoryStringAddress(anim)
+                            if address then
+                                local valid,current=pcall(read_std_string,address)
+                                if valid and animationIdFromText(current)==MarketCore.id(id) then synced=synced+1 end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return {available=ok,reason=reason,rig=rig,requestedStates=requested,synced=synced,total=total,
+        written=playbackStats.wrote,failed=playbackStats.failed,last=playbackStats.last}
 end
 _G.StanceAnimationEngine = StanceEngine
 _G.StanceEngineUnload = function()
