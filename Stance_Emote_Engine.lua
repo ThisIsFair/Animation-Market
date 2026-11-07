@@ -61,7 +61,13 @@ function Emotes.Play(value,useKeyboard)
     local ok,played=pcall(function() return humanoid:PlayEmoteAsync(name) end)
     if ok and played==true then
         running=false
-        lastName,lastMethod,lastError=name,"Roblox native",nil
+        lastName,lastMethod,lastError=name,"Roblox native async",nil
+        return true,"Roblox started "..name
+    end
+    local legacyOk,legacyPlayed=pcall(function() return humanoid:PlayEmote(name) end)
+    if legacyOk and legacyPlayed==true then
+        running=false
+        lastName,lastMethod,lastError=name,"Roblox native legacy",nil
         return true,"Roblox started "..name
     end
     if useKeyboard==true and allowed[name] then
