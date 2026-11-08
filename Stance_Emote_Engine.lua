@@ -244,6 +244,58 @@ function Emotes.PlayId(value)
     return true,"Play request sent for "..id.."; check whether it moves your character"
 end
 
+
+-- Read-only capability check. This NEVER writes to Roblox memory or sends a chat message.
+function Emotes.Inspect()
+    local character,humanoid,reason=characterStatus()
+    if not humanoid then return false,reason end
+    local animate=character:FindFirstChild("Animate")
+    if not animate then return false,"No Animate object found on your R15 character" end
+    local names={"wave","point","laugh","cheer","dance","dance2","dance3","emote"}
+    local lines={"[Stance/Emotes] Read-only R15 emote capability report"}
+    local found,clips=0,0
+    for _,name in ipairs(names) do
+        local folder=animate:FindFirstChild(name)
+        if not folder then
+            lines[#lines+1]=name..": absent"
+        else
+            found=found+1
+            local got,children=pcall(function() return folder:GetChildren() end)
+            local count=0
+            if got and type(children)=="table" then
+                for _,child in ipairs(children) do
+                    local valid,isAnimation=pcall(function() return child:IsA("Animation") end)
+                    if valid and isAnimation then
+                        count=count+1
+                        clips=clips+1
+                        local ok,id=pcall(function() return child.AnimationId end)
+                        local readable=ok and tostring(id) or "not exposed"
+                        local supportsClone=false
+                        pcall(function() supportsClone=type(child.Clone)=="function" end)
+                        lines[#lines+1]=name.."/"..tostring(child.Name)
+                            ..": AnimationId="..readable..", Clone="..tostring(supportsClone)
+                    end
+                end
+            end
+            if count==0 then
+                lines[#lines+1]=name..": present, no readable Animation children"
+            end
+        end
+    end
+    local animator=humanoid:FindFirstChildOfClass("Animator")
+    local loadMethod,existingMethod="missing","missing"
+    if animator then
+        pcall(function() loadMethod=tostring(type(animator.LoadAnimation)) end)
+        pcall(function() existingMethod=tostring(type(animator.GetTrackByAnimationId)) end)
+    end
+    lines[#lines+1]="Animator: "..tostring(animator~=nil)
+        .."; LoadAnimation="..loadMethod.."; GetTrackByAnimationId="..existingMethod
+    lines[#lines+1]="Found "..found.." emote folders / "..clips.." animation clips"
+    for _,line in ipairs(lines) do print(line) end
+    lastDetail="Read-only emote inspection: "..found.." folders, "..clips.." clips. Full report in Matcha console."
+    return true,lastDetail
+end
+
 function Emotes.Command(value)
     local name=tostring(value or ""):lower()
     if not allowed[name] then return nil,"No standard /e command for this emote" end
