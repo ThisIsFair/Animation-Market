@@ -324,7 +324,7 @@ local UI = {
     W = 740, H = 540, W0 = 740,
     binding = nil, bindGuard = 0,
 }
-local function toast(msg, kind)
+function UI.toast(msg, kind)
     UI.toasts[#UI.toasts + 1] = { msg = msg, kind = kind or "info", life = 2.6 }
     if #UI.toasts > 3 then table.remove(UI.toasts, 1) end
 end
@@ -333,7 +333,7 @@ local casBound = false
 local casRetryAt = 0
 local casEvents = 0
 local casWarned = false
-local function casSet(on)
+function UI.casSet(on)
     if not on then
         if casBound then
             pcall(function() game:GetService("ContextActionService"):UnbindAction(CAS_NAME) end)
@@ -361,7 +361,7 @@ local inputSent = nil
 local inputSetErrors = 0
 local inputSetCalls = 0
 local inputHover = false
-local function syncInput(force)
+function UI.syncInput(force)
     local hovered = UI.visible and Mouse.x >= OX and Mouse.x <= OX + UI.W * S
         and Mouse.y >= OY and Mouse.y <= OY + UI.H * S
     local focused = UI.visible and (UI.focus ~= nil or UI.binding ~= nil)
@@ -383,21 +383,21 @@ local function syncInput(force)
             inputSetErrors = 1
         end
     end
-    casSet(focused)
+    UI.casSet(focused)
 end
-local function blur()
+function UI.blur()
     UI.focus = nil
     UI.focusGrace = 0
-    syncInput(true)
+    UI.syncInput(true)
 end
-local function focusInput(id)
+function UI.focusInput(id)
     if UI.focus == id then
-        blur()
+        UI.blur()
         return
     end
     UI.focus = id
     UI.focusGrace = 2
-    syncInput(true)
+    UI.syncInput(true)
 end
 local SLOTS = {"Idle", "Walk", "Run", "Jump", "Fall", "Climb", "Swim", "SwimIdle"}
 local SLOT_LABEL = {
@@ -411,19 +411,19 @@ local ENGINE_URL = "https://raw.githubusercontent.com/ThisIsFair/Animation-Marke
 local catalogError = nil
 local engineError = nil
 local engine = nil
-local function catalogRead(raw)
+function UI.catalogRead(raw)
     local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
     if ok and type(data) == "table" and type(data.packs) == "table" then return data end
     return nil
 end
 local catalogData = nil
 pcall(function()
-    if isfile(CATALOG_FILE) then catalogData = catalogRead(readfile(CATALOG_FILE)) end
+    if isfile(CATALOG_FILE) then catalogData = UI.catalogRead(readfile(CATALOG_FILE)) end
 end)
 if not catalogData then
     local ok, body = pcall(httpget, CATALOG_URL)
     if ok and type(body) == "string" and #body > 0 then
-        catalogData = catalogRead(body)
+        catalogData = UI.catalogRead(body)
         if catalogData then pcall(function() writefile(CATALOG_FILE, body) end) end
     end
 end
@@ -493,7 +493,7 @@ else
 end
 end
 local PlaybackHealth = {report=nil,nextAt=0,rig="Loading",lastWarnChar=nil}
-local function refreshPlaybackHealth(force)
+function UI.refreshPlaybackHealth(force)
     local now=tick()
     if not force and now<PlaybackHealth.nextAt then return end
     PlaybackHealth.nextAt=now+1.5
@@ -510,19 +510,19 @@ local function refreshPlaybackHealth(force)
     local char=LocalPlayer and LocalPlayer.Character
     if PlaybackHealth.rig=="R6" and char and char~=PlaybackHealth.lastWarnChar and State.equipped~=nil then
         PlaybackHealth.lastWarnChar=char
-        toast("R6 character detected. Marketplace animations require R15.", "warn")
+        UI.toast("R6 character detected. Marketplace animations require R15.", "warn")
     end
 end
-local function invokeEngine(method, payload)
+function UI.invokeEngine(method, payload)
     assert(engine and type(engine[method]) == "function", engineError or "Animation engine unavailable")
     local ok, reason = engine[method](payload)
     assert(ok, tostring(reason or "Animation engine rejected the operation"))
     return true
 end
-local function applyToGame(kind, payload)
+function UI.applyToGame(kind, payload)
     if kind == "pack" then
         assert(type(payload) == "table" and type(payload.rows) == "table", "Pack mapping unavailable")
-        return invokeEngine("ApplyRows", payload.rows)
+        return UI.invokeEngine("ApplyRows", payload.rows)
     elseif kind == "mix" then
         local states = {}
         for slot, packId in pairs(payload or {}) do
@@ -538,29 +538,29 @@ local function applyToGame(kind, payload)
                 if #ids > 0 then states[target] = ids end
             end
         end
-        return invokeEngine("ApplyStateIds", states)
+        return UI.invokeEngine("ApplyStateIds", states)
     elseif kind == "restore" then
-        return invokeEngine("Restore")
+        return UI.invokeEngine("Restore")
     end
     assert(false, "Unknown animation operation")
 end
-local function missingOf(p)
+function UI.missingOf(p)
     local m = {}
     for _, slot in ipairs(SLOTS) do
         if not p.anims[slot] then m[#m + 1] = SLOT_LABEL[slot] end
     end
     return m
 end
-local function mixCount()
+function UI.mixCount()
     local n = 0
     for _, slot in ipairs(SLOTS) do if State.mix[slot] then n = n + 1 end end
     return n
 end
-local function isFav(id)
+function UI.isFav(id)
     for _, f in ipairs(State.favs) do if f == id then return true end end
     return false
 end
-local function toggleFav(id)
+function UI.toggleFav(id)
     UI.favVer = UI.favVer + 1
     markDirty()
     for i, f in ipairs(State.favs) do
@@ -569,12 +569,12 @@ local function toggleFav(id)
     table.insert(State.favs, 1, id)
     return true
 end
-local function isHiddenPack(id)
+function UI.isHiddenPack(id)
     return State.hiddenPacks[tostring(id)] == true
 end
-local function toggleHiddenPack(p)
+function UI.toggleHiddenPack(p)
     local id = tostring(p.id)
-    if isHiddenPack(id) then
+    if UI.isHiddenPack(id) then
         State.hiddenPacks[id] = nil
     else
         State.hiddenPacks[id] = true
@@ -582,25 +582,25 @@ local function toggleHiddenPack(p)
     UI.blackVer = UI.blackVer + 1
     UI.bPage,UI.fPage,UI.mPage = 1,1,1
     markDirty()
-    toast(isHiddenPack(id) and ("Hidden " .. p.name .. " from browsing and Smart Mix") or ("Unhidden " .. p.name), "info")
+    UI.toast(UI.isHiddenPack(id) and ("Hidden " .. p.name .. " from browsing and Smart Mix") or ("Unhidden " .. p.name), "info")
 end
-local function newId() return tostring(math.floor(tick() * 1000)) .. tostring(math.random(100, 999)) end
-local function copySlots(src)
+function UI.newId() return tostring(math.floor(tick() * 1000)) .. tostring(math.random(100, 999)) end
+function UI.copySlots(src)
     local t = {}
     for _, slot in ipairs(SLOTS) do t[slot] = src[slot] end
     return t
 end
-local function equippedLabel()
+function UI.equippedLabel()
     if State.equipped == "mix" then return "Custom mix " .. mixCount() .. "/8" end
     local p = State.equipped and PACK_BY_ID[State.equipped]
     return p and p.name or nil
 end
-local function currentSnap()
+function UI.currentSnap()
     local m = nil
-    if State.equipped == "mix" and State.appliedMix then m = copySlots(State.appliedMix) end
+    if State.equipped == "mix" and State.appliedMix then m = UI.copySlots(State.appliedMix) end
     return { eq = State.equipped, mix = m }
 end
-local function sameSnap(a, b)
+function UI.sameSnap(a, b)
     if a.eq ~= b.eq then return false end
     if a.eq == "mix" then
         for _, slot in ipairs(SLOTS) do
@@ -609,40 +609,40 @@ local function sameSnap(a, b)
     end
     return true
 end
-local function snapLabel(snap)
+function UI.snapLabel(snap)
     if snap.eq == nil then return "default animations" end
     if snap.eq == "mix" then return "your mix" end
     local p = PACK_BY_ID[snap.eq]
     return p and p.name or "previous animation"
 end
-local function applySnap(snap)
+function UI.applySnap(snap)
     local ok, err
     if snap.eq == nil then
-        ok, err = pcall(applyToGame, "restore", nil)
+        ok, err = pcall(UI.applyToGame, "restore", nil)
         if ok then State.equipped = nil; State.appliedMix = nil end
     elseif snap.eq == "mix" then
         local m = snap.mix or State.mix
-        ok, err = pcall(applyToGame, "mix", m)
-        if ok then State.equipped = "mix"; State.appliedMix = copySlots(m) end
+        ok, err = pcall(UI.applyToGame, "mix", m)
+        if ok then State.equipped = "mix"; State.appliedMix = UI.copySlots(m) end
     else
         local p = PACK_BY_ID[snap.eq]
         if not p then return false end
-        ok, err = pcall(applyToGame, "pack", p)
+        ok, err = pcall(UI.applyToGame, "pack", p)
         if ok then State.equipped = p.id; State.appliedMix = nil end
     end
-    if not ok then toast("Could not apply: " .. tostring(err), "bad"); return false end
+    if not ok then UI.toast("Could not apply: " .. tostring(err), "bad"); return false end
     markDirty()
     return true
 end
-local function equipPack(p)
+function UI.equipPack(p)
     if tick() < UI.busyUntil then return false end
     UI.busyUntil = tick() + 0.35
-    local before = currentSnap()
-    local ok, err = pcall(applyToGame, "pack", p)
-    if not ok then toast("Could not apply: " .. tostring(err), "bad"); return false end
+    local before = UI.currentSnap()
+    local ok, err = pcall(UI.applyToGame, "pack", p)
+    if not ok then UI.toast("Could not apply: " .. tostring(err), "bad"); return false end
     State.equipped = p.id
     State.appliedMix = nil
-    if not sameSnap(before, currentSnap()) then State.undo = before end
+    if not UI.sameSnap(before, UI.currentSnap()) then State.undo = before end
     for i = #State.recent, 1, -1 do
         if State.recent[i] == p.id then table.remove(State.recent, i) end
     end
@@ -650,64 +650,64 @@ local function equipPack(p)
     if #State.recent > 12 then table.remove(State.recent) end
     UI.recentVer = UI.recentVer + 1
     markDirty()
-    local miss = missingOf(p)
-    if #miss > 0 then toast("Equipped " .. p.name .. " (missing " .. table.concat(miss, ", ") .. ")", "warn")
-    else toast("Equipped " .. p.name, "good") end
+    local miss = UI.missingOf(p)
+    if #miss > 0 then UI.toast("Equipped " .. p.name .. " (missing " .. table.concat(miss, ", ") .. ")", "warn")
+    else UI.toast("Equipped " .. p.name, "good") end
     return true
 end
-local function applyMix()
-    local n = mixCount()
-    if n == 0 then toast("Assign at least one state first", "bad"); return false end
+function UI.applyMix()
+    local n = UI.mixCount()
+    if n == 0 then UI.toast("Assign at least one state first", "bad"); return false end
     if tick() < UI.busyUntil then return false end
     UI.busyUntil = tick() + 0.35
-    local before = currentSnap()
-    local ok, err = pcall(applyToGame, "mix", State.mix)
-    if not ok then toast("Could not apply: " .. tostring(err), "bad"); return false end
+    local before = UI.currentSnap()
+    local ok, err = pcall(UI.applyToGame, "mix", State.mix)
+    if not ok then UI.toast("Could not apply: " .. tostring(err), "bad"); return false end
     State.equipped = "mix"
-    State.appliedMix = copySlots(State.mix)
-    if not sameSnap(before, currentSnap()) then State.undo = before end
+    State.appliedMix = UI.copySlots(State.mix)
+    if not UI.sameSnap(before, UI.currentSnap()) then State.undo = before end
     markDirty()
-    toast("Mix applied (" .. n .. "/8 states)", "good")
+    UI.toast("Mix applied (" .. n .. "/8 states)", "good")
     return true
 end
-local function restoreDefaults()
-    local before = currentSnap()
-    local ok, err = pcall(applyToGame, "restore", nil)
-    if not ok then toast("Restore failed: " .. tostring(err), "bad"); return false end
+function UI.restoreDefaults()
+    local before = UI.currentSnap()
+    local ok, err = pcall(UI.applyToGame, "restore", nil)
+    if not ok then UI.toast("Restore failed: " .. tostring(err), "bad"); return false end
     State.equipped = nil
     State.appliedMix = nil
     if before.eq ~= nil then State.undo = before end
     markDirty()
-    toast("Default animations restored", "info")
+    UI.toast("Default animations restored", "info")
     return true
 end
-local function reapply(silent)
+function UI.reapply(silent)
     if State.equipped == nil then
-        if not silent then toast("Nothing equipped to reapply", "info") end
+        if not silent then UI.toast("Nothing equipped to reapply", "info") end
         return false
     end
-    local ok = applySnap(currentSnap())
-    if ok and not silent then toast("Reapplied " .. (equippedLabel() or ""), "good") end
+    local ok = UI.applySnap(UI.currentSnap())
+    if ok and not silent then UI.toast("Reapplied " .. (UI.equippedLabel() or ""), "good") end
     return ok
 end
-local function undoLast()
+function UI.undoLast()
     if tick() < UI.busyUntil then return end
     local target = State.undo
-    if not target then toast("Nothing to undo", "info"); return end
+    if not target then UI.toast("Nothing to undo", "info"); return end
     UI.busyUntil = tick() + 0.35
-    local cur = currentSnap()
-    if applySnap(target) then
+    local cur = UI.currentSnap()
+    if UI.applySnap(target) then
         State.undo = cur
-        toast("Back to " .. snapLabel(target), "good")
+        UI.toast("Back to " .. snapLabel(target), "good")
     end
 end
-local function cycleFavorite(dir)
+function UI.cycleFavorite(dir)
     local list = {}
     for _, id in ipairs(State.favs) do
         local p = PACK_BY_ID[id]
         if p then list[#list + 1] = p end
     end
-    if #list == 0 then toast("No favorites saved yet", "info"); return end
+    if #list == 0 then UI.toast("No favorites saved yet", "info"); return end
     local idx = 0
     for i, p in ipairs(list) do
         if p.id == State.equipped then idx = i; break end
@@ -715,7 +715,7 @@ local function cycleFavorite(dir)
     local nxt
     if idx == 0 then nxt = (dir > 0) and 1 or #list
     else nxt = ((idx - 1 + dir) % #list) + 1 end
-    equipPack(list[nxt])
+    UI.equipPack(list[nxt])
 end
 local Extras = { candidates = {} }
 for _, slot in ipairs(SLOTS) do Extras.candidates[slot] = {} end
@@ -745,7 +745,7 @@ function Extras.randomizeMix()
             local pool = Extras.candidates[slot]
             local candidates = {}
             for _, p in ipairs(pool) do
-                if not isHiddenPack(p.id) and (allowed == nil or allowed[p.id]) then candidates[#candidates + 1] = p.id end
+                if not UI.isHiddenPack(p.id) and (allowed == nil or allowed[p.id]) then candidates[#candidates + 1] = p.id end
             end
             if #candidates == 0 then
                 skipped = skipped + 1
@@ -767,10 +767,10 @@ function Extras.randomizeMix()
     if changed > 0 then markDirty() end
     local msg = "Shuffled " .. changed .. " states, kept " .. locked .. " locked"
     if skipped > 0 then msg = msg .. ", " .. skipped .. " unavailable" end
-    toast(msg, skipped > 0 and "warn" or "good")
+    UI.toast(msg, skipped > 0 and "warn" or "good")
 end
 local MIX_CODE_DIGITS="0123456789abcdefghijklmnopqrstuvwxyz"
-local function toMixBase36(n)
+function UI.toMixBase36(n)
     if type(n)~="number" or n<0 or n>9007199254740991 or n%1~=0 then return nil end
     local out=""
     repeat
@@ -780,12 +780,12 @@ local function toMixBase36(n)
     until n==0
     return out
 end
-local function mixCodeChecksum(body)
+function UI.mixCodeChecksum(body)
     local sum=17
     for i=1,#body do sum=(sum*31+body:byte(i))%46656 end
-    return toMixBase36(sum)
+    return UI.toMixBase36(sum)
 end
-local function encodeMixCode(slots)
+function UI.encodeMixCode(slots)
     local parts={"s1"}
     for _,slot in ipairs(SLOTS) do
         local id=slots[slot]
@@ -794,7 +794,7 @@ local function encodeMixCode(slots)
         else
             local idText=tostring(id)
             if not idText:match("^%d+$") then return nil,"Non-numeric pack ID" end
-            local token=toMixBase36(tonumber(idText))
+            local token=UI.toMixBase36(tonumber(idText))
             if not token then return nil,"Pack ID too large to encode" end
             parts[#parts+1]=token
         end
@@ -802,7 +802,7 @@ local function encodeMixCode(slots)
     local body=table.concat(parts,"-")
     return body.."-"..mixCodeChecksum(body)
 end
-local function decodeMixCode(value)
+function UI.decodeMixCode(value)
     if type(value)~="string" or #value>240 then return nil,"Invalid code length" end
     local clean=value:lower():gsub("%s+","")
     if not clean:match("^[a-z0-9%-]+$") then return nil,"Invalid code characters" end
@@ -810,7 +810,7 @@ local function decodeMixCode(value)
     for item in clean:gmatch("[^%-]+") do parts[#parts+1]=item end
     if #parts~=10 or parts[1]~="s1" then return nil,"Expected a Stance s1 mix code" end
     local body=table.concat(parts,"-",1,9)
-    if parts[10]~=mixCodeChecksum(body) then return nil,"Invalid code checksum" end
+    if parts[10]~=UI.mixCodeChecksum(body) then return nil,"Invalid code checksum" end
     local result,count={},0
     for i,slot in ipairs(SLOTS) do
         local token=parts[i+1]
@@ -830,35 +830,35 @@ local function decodeMixCode(value)
     if count==0 then return nil,"Shared mix has no animation states" end
     return result
 end
-local function copyMixCode()
-    local code,err=encodeMixCode(State.mix)
-    if not code then toast(err,"bad");return end
+function UI.copyMixCode()
+    local code,err=UI.encodeMixCode(State.mix)
+    if not code then UI.toast(err,"bad");return end
     local ok=pcall(function() setclipboard(code) end)
     UI.codeInput=code
-    toast(ok and "Mix code copied to clipboard" or "Clipboard unavailable; code shown below",ok and "good" or "warn")
+    UI.toast(ok and "Mix code copied to clipboard" or "Clipboard unavailable; code shown below",ok and "good" or "warn")
 end
-local function pasteMixCode()
+function UI.pasteMixCode()
     if type(getclipboard)~="function" then
-        toast("Clipboard reading unsupported; enter the code manually","warn")
+        UI.toast("Clipboard reading unsupported; enter the code manually","warn")
         return
     end
     local ok,content=pcall(getclipboard)
     if not ok or type(content)~="string" or #content>240 then
-        toast("Clipboard does not contain a valid-sized mix code","bad")
+        UI.toast("Clipboard does not contain a valid-sized mix code","bad")
         return
     end
     UI.codeInput=content
 end
-local function importMixCode()
-    local slots,reason=decodeMixCode(UI.codeInput)
-    if not slots then toast(reason,"bad");return end
+function UI.importMixCode()
+    local slots,reason=UI.decodeMixCode(UI.codeInput)
+    if not slots then UI.toast(reason,"bad");return end
     State.mix=slots
     UI.codeOpen=false
-    blur()
+    UI.blur()
     markDirty()
-    toast("Mix imported. Press Apply mix to equip.","good")
+    UI.toast("Mix imported. Press Apply mix to equip.","good")
 end
-local function getList(kind)
+function UI.getList(kind)
     local search = (kind == "b") and UI.bSearch or UI.fSearch
     local sort = (kind == "b") and UI.bSort or "saved"
     local filter = kind == "b" and UI.bFilter or "all"
@@ -892,8 +892,8 @@ local function getList(kind)
                 or (filter == "partial" and p.states < #SLOTS)
                 or (filter == "favorites" and favorites[p.id])
                 or (filter == "recent" and recent[p.id])
-            if eligible and ((filter == "hidden" and isHiddenPack(p.id))
-                or (filter ~= "hidden" and not isHiddenPack(p.id))) then list[#list + 1] = p end
+            if eligible and ((filter == "hidden" and UI.isHiddenPack(p.id))
+                or (filter ~= "hidden" and not UI.isHiddenPack(p.id))) then list[#list + 1] = p end
         end
     end
     if sort == "name" then
@@ -910,14 +910,14 @@ local function getList(kind)
     UI.caches[kind] = { key = key, list = list }
     return list
 end
-local function getMixList()
+function UI.getMixList()
     local key = UI.mixSel .. "|" .. UI.mSearch .. "|" .. UI.blackVer
     local c = UI.caches.m
     if c and c.key == key then return c.list end
     local s = UI.mSearch:lower()
     local list = {}
     for _, p in ipairs(PACKS) do
-        if not isHiddenPack(p.id) and p.anims[UI.mixSel] and (s == "" or p._ln:find(s, 1, true)) then
+        if not UI.isHiddenPack(p.id) and p.anims[UI.mixSel] and (s == "" or p._ln:find(s, 1, true)) then
             list[#list + 1] = p
         end
     end
@@ -925,24 +925,24 @@ local function getMixList()
     UI.caches.m = { key = key, list = list }
     return list
 end
-local function circle(cx, cy, r, col, z, a)
+function UI.circle(cx, cy, r, col, z, a)
     rect(cx - r, cy - r, r * 2, r * 2, col, z, r, a, true)
 end
-local function pill(x, y, w, h, border, fill, z, a)
+function UI.pill(x, y, w, h, border, fill, z, a)
     rect(x, y, w, h, border, z, h / 2, a)
     rect(x + 1, y + 1, w - 2, h - 2, fill, z + 1, h / 2 - 1, a)
 end
-local function card(x, y, w, h, r, z, state, fill)
+function UI.card(x, y, w, h, r, z, state, fill)
     local border, f = TH.line, fill or TH.card
     if state == "hov" then border = TH.lineHi; f = TH.rowHover
     elseif state == "sel" then border = TH.text; f = TH.rowHover end
     rect(x, y, w, h, border, z, r)
     rect(x + 1, y + 1, w - 2, h - 2, f, z + 1, math.max(0, r - 1))
 end
-local function icon(name, cx, cy, col, z)
+function UI.icon(name, cx, cy, col, z)
     local T = 1.6
     local function ln(x1, y1, x2, y2) line(cx + x1, cy + y1, cx + x2, cy + y2, T, col, z) end
-    local function dot(x, y, r) circle(cx + x, cy + y, r, col, z) end
+    local function dot(x, y, r) UI.circle(cx + x, cy + y, r, col, z) end
     if name == "home" then
         ln(-9, 0, 0, -9); ln(0, -9, 9, 0); ln(-6, -3, -6, 8); ln(6, -3, 6, 8); ln(-6, 8, 6, 8)
         ln(-2, 8, -2, 3); ln(2, 8, 2, 3); ln(-2, 3, 2, 3)
@@ -973,31 +973,31 @@ local function icon(name, cx, cy, col, z)
         dot(-5, -2, 1.3); dot(0, -2, 1.3); dot(5, -2, 1.3); ln(-5, 3, 5, 3)
     elseif name == "sliders" then
         ln(-10, -4, 10, -4); ln(-10, 4, 10, 4)
-        circle(cx - 3, cy - 4, 3.6, col, z); circle(cx - 3, cy - 4, 2, TH.bg, z + 1)
-        circle(cx + 4, cy + 4, 3.6, col, z); circle(cx + 4, cy + 4, 2, TH.bg, z + 1)
+        UI.circle(cx - 3, cy - 4, 3.6, col, z); UI.circle(cx - 3, cy - 4, 2, TH.bg, z + 1)
+        UI.circle(cx + 4, cy + 4, 3.6, col, z); UI.circle(cx + 4, cy + 4, 2, TH.bg, z + 1)
     elseif name == "close" then
         ln(-5, -5, 5, 5); ln(-5, 5, 5, -5)
     elseif name == "panel" then
         ln(-7, -5, 7, -5); ln(7, -5, 7, 5); ln(7, 5, -7, 5); ln(-7, 5, -7, -5); ln(1, -5, 1, 5)
     end
 end
-local function hit(x, y, w, h)
+function UI.hit(x, y, w, h)
     if UI.dragging or UI.resizing then return false end
     local mx, my = Mouse.lx, Mouse.ly
     return mx >= x and mx <= x + w and my >= y and my <= y + h
 end
-local function reg(x, y, w, h, id, fn, tip, isInput)
+function UI.reg(x, y, w, h, id, fn, tip, isInput)
     UI.buttons[#UI.buttons + 1] = { x = x, y = y, w = w, h = h, id = id, fn = fn, tip = tip, isInput = isInput }
 end
-local function button(x, y, w, h, label, id, fn, style, z, tip, size)
+function UI.button(x, y, w, h, label, id, fn, style, z, tip, size)
     style = style or "soft"
     z = z or 20
-    local hov = fn ~= nil and hit(x, y, w, h)
+    local hov = fn ~= nil and UI.hit(x, y, w, h)
     local tcol = TH.text
     if style == "primary" then
         rect(x, y, w, h, hov and TH.accentHi or TH.accent, z + 1, h / 2); tcol = TH.onAccent
     elseif style == "soft" then
-        pill(x, y, w, h, hov and TH.lineHi or TH.line, hov and TH.ctl or TH.bg, z)
+        UI.pill(x, y, w, h, hov and TH.lineHi or TH.line, hov and TH.ctl or TH.bg, z)
     elseif style == "ghost" then
         if hov then rect(x, y, w, h, TH.ctl, z + 1, h / 2) end
         tcol = hov and TH.text or TH.sub
@@ -1007,20 +1007,20 @@ local function button(x, y, w, h, label, id, fn, style, z, tip, size)
     elseif style == "dangerSolid" then
         rect(x, y, w, h, hov and TH.badHi or TH.bad, z + 1, h / 2); tcol = WHITE
     elseif style == "good" then
-        pill(x, y, w, h, TH.goodLine, TH.bg, z); tcol = TH.good
+        UI.pill(x, y, w, h, TH.goodLine, TH.bg, z); tcol = TH.good
     elseif style == "accent" then
-        pill(x, y, w, h, hov and TH.text or TH.sub, hov and TH.ctl or TH.bg, z)
+        UI.pill(x, y, w, h, hov and TH.text or TH.sub, hov and TH.ctl or TH.bg, z)
     else
         tcol = TH.mute
     end
     txt(label, x + w / 2, y + h / 2, size or (FS - 1), tcol, z + 3, true, false)
-    if fn or tip then reg(x, y, w, h, id, fn, tip) end
+    if fn or tip then UI.reg(x, y, w, h, id, fn, tip) end
 end
-local function input(x, y, w, h, tbl, key, id, placeholder, z, onChange, onEnter)
+function UI.input(x, y, w, h, tbl, key, id, placeholder, z, onChange, onEnter)
     z = z or 20
     local focused = UI.focus == id
-    local hov = hit(x, y, w, h)
-    pill(x, y, w, h, focused and TH.text or (hov and TH.lineHi or TH.line), TH.input, z)
+    local hov = UI.hit(x, y, w, h)
+    UI.pill(x, y, w, h, focused and TH.text or (hov and TH.lineHi or TH.line), TH.input, z)
     local val = tbl[key]
     local hasClear = val ~= ""
     local maxW = w - 36 - (hasClear and 24 or 0)
@@ -1032,17 +1032,17 @@ local function input(x, y, w, h, tbl, key, id, placeholder, z, onChange, onEnter
         txt(shown, x + 16, y + h / 2, FS - 1, TH.text, z + 3)
     end
     UI.inputs[#UI.inputs + 1] = { id = id, t = tbl, k = key, onChange = onChange, onEnter = onEnter }
-    reg(x, y, w, h, id, function() focusInput(id) end, nil, true)
+    UI.reg(x, y, w, h, id, function() UI.focusInput(id) end, nil, true)
     if hasClear then
-        button(x + w - 28, y + (h - 22) / 2, 22, 22, "x", id .. "_clr", function()
+        UI.button(x + w - 28, y + (h - 22) / 2, 22, 22, "x", id .. "_clr", function()
             tbl[key] = ""
             if onChange then onChange() end
         end, "ghost", z + 4, "Clear", FS - 2)
     end
 end
-local function segmented(x, y, w, h, opts, sel, fn, z, id)
+function UI.segmented(x, y, w, h, opts, sel, fn, z, id)
     z = z or 20
-    pill(x, y, w, h, TH.line, TH.input, z)
+    UI.pill(x, y, w, h, TH.line, TH.input, z)
     local n = #opts
     local inset = 3
     local sw = (w - inset * 2) / n
@@ -1052,14 +1052,14 @@ local function segmented(x, y, w, h, opts, sel, fn, z, id)
         local on
         if type(sel) == "number" and type(o[1]) == "number" then on = math.abs(sel - o[1]) < 0.001
         else on = (o[1] == sel) end
-        local hov = hit(sx, y + inset, sw, sh)
+        local hov = UI.hit(sx, y + inset, sw, sh)
         if on then rect(sx, y + inset, sw, sh, TH.accent, z + 2, sh / 2)
         elseif hov then rect(sx, y + inset, sw, sh, TH.ctl, z + 2, sh / 2) end
         txt(o[2], sx + sw / 2, y + h / 2, FS - 1, on and TH.onAccent or (hov and TH.text or TH.sub), z + 4, true, false)
-        reg(sx, y + inset, sw, sh, id .. tostring(o[1]), function() fn(o[1]) end)
+        UI.reg(sx, y + inset, sw, sh, id .. tostring(o[1]), function() fn(o[1]) end)
     end
 end
-local function footer(x, y, w, pageKey, pages, total, from, to, idp, jump)
+function UI.footer(x, y, w, pageKey, pages, total, from, to, idp, jump)
     local h = 28
     if w >= 420 then
         txt(total > 0 and ("Showing " .. from .. "-" .. to .. " of " .. total) or "Nothing to show",
@@ -1070,7 +1070,7 @@ local function footer(x, y, w, pageKey, pages, total, from, to, idp, jump)
     local function nav(label, target, nid)
         rx = rx - 30
         local ok = target ~= page
-        button(rx, y, 30, h, label, idp .. nid, ok and function() UI[pageKey] = target end or nil,
+        UI.button(rx, y, 30, h, label, idp .. nid, ok and function() UI[pageKey] = target end or nil,
             ok and "soft" or "disabled", 20)
         rx = rx - 4
     end
@@ -1086,44 +1086,44 @@ local function footer(x, y, w, pageKey, pages, total, from, to, idp, jump)
             local n = tonumber(UI.jump)
             if n then UI[pageKey] = math.clamp(math.floor(n), 1, pages) end
             UI.jump = ""
-            blur()
+            UI.blur()
         end
         rx = rx - 10
         rx = rx - 36
-        button(rx, y, 36, h, "Go", idp .. "go", doJump, "soft", 20)
+        UI.button(rx, y, 36, h, "Go", idp .. "go", doJump, "soft", 20)
         rx = rx - 6
         rx = rx - 56
-        input(rx, y, 56, h, UI, "jump", idp .. "jump", "Page", 20, nil, doJump)
+        UI.input(rx, y, 56, h, UI, "jump", idp .. "jump", "Page", 20, nil, doJump)
     end
 end
-local function emptyState(x, y, w, h, title, sub)
+function UI.emptyState(x, y, w, h, title, sub)
     txt(title, x + w / 2, y + h / 2 - 10, FS + 1, TH.sub, 14, true, true)
     txt(sub, x + w / 2, y + h / 2 + 12, FS - 1, TH.mute, 14, true)
 end
-local function btnW(label, size) return round(tw(label, size or (FS - 1)) + 30) end
+function UI.btnW(label, size) return round(tw(label, size or (FS - 1)) + 30) end
 
-local function renderPackList(x, y, w, h, kind)
+function UI.renderPackList(x, y, w, h, kind)
     local isB = kind == "b"
     local searchKey = isB and "bSearch" or "fSearch"
     local pageKey = isB and "bPage" or "fPage"
     local tb = 32
     local sortW = isB and 150 or 0
     local sw = w - (isB and (sortW + 8) or 0)
-    input(x, y, sw, tb, UI, searchKey, kind .. "search",
+    UI.input(x, y, sw, tb, UI, searchKey, kind .. "search",
         isB and "Search packs" or "Search favorites", 20,
         function() UI[pageKey] = 1 end)
     if isB then
-        segmented(x + sw + 8, y, sortW, tb, { {"name", "Name"}, {"recent", "Recent"} },
+        UI.segmented(x + sw + 8, y, sortW, tb, { {"name", "Name"}, {"recent", "Recent"} },
             UI.bSort, function(k) UI.bSort = k; UI.bPage = 1 end, 20, "sort")
     end
     if isB then
         local filterW = w - 130
-        segmented(x, y + 42, filterW, 30,
+        UI.segmented(x, y + 42, filterW, 30,
             { {"all", "All"}, {"complete", "8/8"}, {"partial", "Partial"},
               {"favorites", "Saved"}, {"recent", "Recent"}, {"hidden", "Hidden"} },
             UI.bFilter, function(k) UI.bFilter = k; UI.bPage = 1 end, 20, "bf")
         local sx = x + filterW + 8
-        button(sx, y + 42, w - filterW - 8, 30,
+        UI.button(sx, y + 42, w - filterW - 8, 30,
             fit("State: " .. (UI.bState == "All" and "All" or SLOT_LABEL[UI.bState]), w - filterW - 20, FS - 2),
             "bstate", function()
                 local index = 0
@@ -1138,7 +1138,7 @@ local function renderPackList(x, y, w, h, kind)
     local rowH = State.compact and 34 or 42
     local gap = 6
     local per = math.max(1, math.floor((bottom - top + gap) / (rowH + gap)))
-    local list = getList(kind)
+    local list = UI.getList(kind)
     local total = #list
     local pages = math.max(1, math.ceil(total / per))
     UI[pageKey] = math.clamp(UI[pageKey], 1, pages)
@@ -1149,40 +1149,40 @@ local function renderPackList(x, y, w, h, kind)
         if not p then break end
         local ry = top + (n - 1) * (rowH + gap)
         local cy = ry + rowH / 2
-        local hov = hit(x, ry, w, rowH)
+        local hov = UI.hit(x, ry, w, rowH)
         local isEq = State.equipped == p.id
-        card(x, ry, w, rowH, 16, 10, isEq and "sel" or (hov and "hov" or nil))
-        reg(x, ry, w, rowH, "row" .. kind .. p.id, function() equipPack(p) end, "Click to equip this pack")
-        if isEq then circle(x + 14, cy, 3, TH.good, 12) end
+        UI.card(x, ry, w, rowH, 16, 10, isEq and "sel" or (hov and "hov" or nil))
+        UI.reg(x, ry, w, rowH, "row" .. kind .. p.id, function() UI.equipPack(p) end, "Click to equip this pack")
+        if isEq then UI.circle(x + 14, cy, 3, TH.good, 12) end
         txt(tostring(idx), x + 28, cy, FS - 2, TH.mute, 14)
         local rEdge = x + w - 10
         local wearW = 80
         local wearX = rEdge - wearW
         if isEq then
-            button(wearX, cy - 14, wearW, 28, "Equipped", "w" .. p.id, nil, "good", 20)
+            UI.button(wearX, cy - 14, wearW, 28, "Equipped", "w" .. p.id, nil, "good", 20)
         else
-            button(wearX, cy - 14, wearW, 28, "Wear", "w" .. p.id, function() equipPack(p) end, "primary", 20)
+            UI.button(wearX, cy - 14, wearW, 28, "Wear", "w" .. p.id, function() UI.equipPack(p) end, "primary", 20)
         end
-        local fav = isFav(p.id)
+        local fav = UI.isFav(p.id)
         local saveW = 66
         local saveX = wearX - 6 - saveW
-        button(saveX, cy - 14, saveW, 28, fav and "Saved" or "Save", "s" .. p.id, function()
-            local added = toggleFav(p.id)
-            toast(added and "Saved to Favorites" or "Removed from Favorites", "info")
+        UI.button(saveX, cy - 14, saveW, 28, fav and "Saved" or "Save", "s" .. p.id, function()
+            local added = UI.toggleFav(p.id)
+            UI.toast(added and "Saved to Favorites" or "Removed from Favorites", "info")
         end, fav and "accent" or "soft", 20)
         local hideW = 54
         local hideX = saveX - 6 - hideW
-        local hidden = isHiddenPack(p.id)
-        button(hideX, cy - 14, hideW, 28, hidden and "Show" or "Hide", "h" .. p.id, function()
-            toggleHiddenPack(p)
+        local hidden = UI.isHiddenPack(p.id)
+        UI.button(hideX, cy - 14, hideW, 28, hidden and "Show" or "Hide", "h" .. p.id, function()
+            UI.toggleHiddenPack(p)
         end, hidden and "accent" or "ghost", 20, hidden and "Restore this pack to browsing and randomizer" or "Hide from browsing and randomizer", FS - 2)
         local badgeW = 44
         local badgeX = hideX - 8 - badgeW
         local full = p.states == p.maxStates
-        pill(badgeX, cy - 10, badgeW, 20, TH.line, TH.bg, 14)
+        UI.pill(badgeX, cy - 10, badgeW, 20, TH.line, TH.bg, 14)
         txt(p.states .. "/" .. p.maxStates, badgeX + badgeW / 2, cy, FS - 2, full and TH.sub or TH.warn, 17, true)
         if not full then
-            reg(badgeX, cy - 10, badgeW, 20, "b" .. p.id, nil, "Missing: " .. table.concat(missingOf(p), ", "))
+            UI.reg(badgeX, cy - 10, badgeW, 20, "b" .. p.id, nil, "Missing: " .. table.concat(UI.missingOf(p), ", "))
         end
         local nameX = x + 56
         local nameMax = badgeX - 12 - nameX
@@ -1190,36 +1190,36 @@ local function renderPackList(x, y, w, h, kind)
     end
     if total == 0 then
         if isB then
-            emptyState(x, top, w, bottom - top, "No packs found", "Change search, state, or filter.")
+            UI.emptyState(x, top, w, bottom - top, "No packs found", "Change search, state, or filter.")
         elseif UI.fSearch ~= "" then
-            emptyState(x, top, w, bottom - top, "No favorites match", "Try a different search.")
+            UI.emptyState(x, top, w, bottom - top, "No favorites match", "Try a different search.")
         else
-            emptyState(x, top, w, bottom - top, "No favorites yet", "Press Save on a pack in Browse to keep it here.")
+            UI.emptyState(x, top, w, bottom - top, "No favorites yet", "Press Save on a pack in Browse to keep it here.")
         end
     end
-    footer(x, y + h - footH, w, pageKey, pages, total, total > 0 and (i0 + 1) or 0, math.min(i0 + per, total), kind, true)
+    UI.footer(x, y + h - footH, w, pageKey, pages, total, total > 0 and (i0 + 1) or 0, math.min(i0 + per, total), kind, true)
 end
-local function renderMix(x, y, w, h)
-    local n = mixCount()
+function UI.renderMix(x, y, w, h)
+    local n = UI.mixCount()
     txt(n .. (w < 690 and "/8 set" or "/8 states assigned"), x + 2, y + 16, FS, TH.sub, 14)
     local bx = x + w
-    bx = bx - 100; button(bx, y, 100, 32, "Apply mix", "apply", applyMix, "primary", 20)
+    bx = bx - 100; UI.button(bx, y, 100, 32, "Apply mix", "apply", UI.applyMix, "primary", 20)
     bx = bx - 8 - 104
-    button(bx, y, 104, 32, "Randomize", "randomize", Extras.randomizeMix, "soft", 20,
+    UI.button(bx, y, 104, 32, "Randomize", "randomize", Extras.randomizeMix, "soft", 20,
         "Shuffle unlocked states, then Apply or Save")
-    local sw2 = btnW("Save preset")
+    local sw2 = UI.btnW("Save preset")
     bx = bx - 8 - sw2
-    button(bx, y, sw2, 32, "Save preset", "tosave", function()
-        UI.page = "Presets"; UI.pName = ""; focusInput("pname")
+    UI.button(bx, y, sw2, 32, "Save preset", "tosave", function()
+        UI.page = "Presets"; UI.pName = ""; UI.focusInput("pname")
     end, "soft", 20, "Create a preset from this mix")
-    local cw = btnW("Clear")
+    local cw = UI.btnW("Clear")
     bx = bx - 8 - cw
-    button(bx, y, cw, 32, "Clear", "clrall", function()
-        State.mix = {}; markDirty(); toast("Mix cleared", "info")
+    UI.button(bx, y, cw, 32, "Clear", "clrall", function()
+        State.mix = {}; markDirty(); UI.toast("Mix cleared", "info")
     end, "danger", 20)
-    button(x+72, y, 68, 32, "Codes", "mixcodes", function()
+    UI.button(x+72, y, 68, 32, "Codes", "mixcodes", function()
         UI.codeOpen=not UI.codeOpen
-        if UI.codeOpen then UI.codeInput="" else blur() end
+        if UI.codeOpen then UI.codeInput="" else UI.blur() end
     end, UI.codeOpen and "accent" or "soft", 20, "Copy or import Mix & Match share codes")
     local top = y + 44
     local bodyH = h - 44
@@ -1229,44 +1229,44 @@ local function renderMix(x, y, w, h)
     for i, slot in ipairs(SLOTS) do
         local ry = top + (i - 1) * (rh + gap)
         local sel = UI.mixSel == slot
-        local hov = hit(x, ry, lw, rh)
-        card(x, ry, lw, rh, 16, 10, sel and "sel" or (hov and "hov" or nil))
+        local hov = UI.hit(x, ry, lw, rh)
+        UI.card(x, ry, lw, rh, 16, 10, sel and "sel" or (hov and "hov" or nil))
         local pid = State.mix[slot]
         local p = pid and PACK_BY_ID[pid]
         local cy = ry + rh / 2
         txt(SLOT_LABEL[slot], x + 14, cy, FS - 1, sel and TH.text or TH.sub, 14, false, true)
         local maxW = lw - 96 - 14 - 104
         txt(p and fit(p.name, maxW, FS - 1) or "Not set", x + 96, cy, FS - 1, p and TH.text or TH.mute, 14)
-        reg(x, ry, lw, rh, "slot" .. slot, function() UI.mixSel = slot; UI.mSearch = ""; UI.mPage = 1 end)
+        UI.reg(x, ry, lw, rh, "slot" .. slot, function() UI.mixSel = slot; UI.mSearch = ""; UI.mPage = 1 end)
         local locked = State.mixLocks[slot] == true
-        button(x + lw - 100, cy - 11, 60, 22, locked and "Locked" or "Lock", "lock" .. slot,
+        UI.button(x + lw - 100, cy - 11, 60, 22, locked and "Locked" or "Lock", "lock" .. slot,
             function()
                 State.mixLocks[slot] = not locked
                 markDirty()
             end, locked and "accent" or "ghost", 20,
             locked and "Keep this state when randomizing" or "Exclude this state from randomizing", FS - 2)
         if p then
-            button(x + lw - 32, cy - 11, 24, 22, "x", "clr" .. slot, function()
+            UI.button(x + lw - 32, cy - 11, 24, 22, "x", "clr" .. slot, function()
                 State.mix[slot] = nil; markDirty()
             end, "ghost", 20, "Reset this slot", FS - 2)
         end
     end
     local px, pw = x + lw + 12, w - lw - 12
-    card(px, top, pw, bodyH, 22, 10)
+    UI.card(px, top, pw, bodyH, 22, 10)
     txt("Choose " .. SLOT_LABEL[UI.mixSel], px + 16, top + 20, FS, TH.text, 14, false, true)
-    button(px + pw - 130, top + 5, 114, 26,
+    UI.button(px + pw - 130, top + 5, 114, 26,
         State.randSource == "favorites" and "Pool: Saved" or "Pool: All", "randompool", function()
             State.randSource = State.randSource == "all" and "favorites" or "all"
             markDirty()
         end, "soft", 20, "Randomizer source; click to switch between all packs and favorites", FS - 2)
-    input(px + 12, top + 38, pw - 24, 30, UI, "mSearch", "msearch", "Search compatible packs", 20,
+    UI.input(px + 12, top + 38, pw - 24, 30, UI, "mSearch", "msearch", "Search compatible packs", 20,
         function() UI.mPage = 1 end)
     local ltop = top + 78
     local footH = 28
     local lbottom = top + bodyH - footH - 14
     local prh, pgap = 34, 4
     local per = math.max(1, math.floor((lbottom - ltop + pgap) / (prh + pgap)))
-    local list = getMixList()
+    local list = UI.getMixList()
     local total = #list
     local pages = math.max(1, math.ceil(total / per))
     UI.mPage = math.clamp(UI.mPage, 1, pages)
@@ -1277,62 +1277,62 @@ local function renderMix(x, y, w, h)
         if not p then break end
         local ry = ltop + (k - 1) * (prh + pgap)
         local isSel = cur == p.id
-        local hov = hit(px + 12, ry, pw - 24, prh)
+        local hov = UI.hit(px + 12, ry, pw - 24, prh)
         rect(px + 12, ry, pw - 24, prh, hov and TH.ctl or TH.rowIn, 12, 8)
         local bw2 = 78
         local bX = px + pw - 12 - 8 - bw2
         local nameMax = bX - (px + 24) - 8
         txt(fit(p.name, nameMax, FS - 1), px + 24, ry + prh / 2, FS - 1, isSel and TH.good or TH.text, 15)
         if isSel then
-            button(bX, ry + 4, bw2, prh - 8, "Selected", "set" .. p.id, nil, "good", 20)
+            UI.button(bX, ry + 4, bw2, prh - 8, "Selected", "set" .. p.id, nil, "good", 20)
         else
-            button(bX, ry + 4, bw2, prh - 8, "Set", "set" .. p.id, function()
+            UI.button(bX, ry + 4, bw2, prh - 8, "Set", "set" .. p.id, function()
                 State.mix[UI.mixSel] = p.id; markDirty()
-                toast(SLOT_LABEL[UI.mixSel] .. " set to " .. p.name, "good")
+                UI.toast(SLOT_LABEL[UI.mixSel] .. " set to " .. p.name, "good")
             end, "primary", 20)
         end
     end
     if total == 0 then
-        emptyState(px, ltop, pw, lbottom - ltop, "No compatible packs", "Try a different search.")
+        UI.emptyState(px, ltop, pw, lbottom - ltop, "No compatible packs", "Try a different search.")
     end
-    footer(px + 12, top + bodyH - footH - 10, pw - 24, "mPage", pages, total,
+    UI.footer(px + 12, top + bodyH - footH - 10, pw - 24, "mPage", pages, total,
         total > 0 and (i0 + 1) or 0, math.min(i0 + per, total), "mix", false)
     if UI.codeOpen then
         local pw2=math.min(500,w-20)
         local px2=x+(w-pw2)/2
         local py2=y+46
-        card(px2,py2,pw2,108,18,40,nil,TH.ctl)
+        UI.card(px2,py2,pw2,108,18,40,nil,TH.ctl)
         txt("SHARE MIX CODE",px2+14,py2+22,FS-2,TH.text,46,false,true)
-        button(px2+pw2-116,py2+7,102,26,"Copy mix","codecopy",copyMixCode,"primary",46,
+        UI.button(px2+pw2-116,py2+7,102,26,"Copy mix","codecopy",UI.copyMixCode,"primary",46,
             "Copy a compact code for the current mix")
-        input(px2+14,py2+56,pw2-180,30,UI,"codeInput","codeinput","Enter Stance s1 code",46,nil,importMixCode)
-        button(px2+pw2-156,py2+56,68,30,"Paste","codepaste",pasteMixCode,"soft",46,
+        UI.input(px2+14,py2+56,pw2-180,30,UI,"codeInput","codeinput","Enter Stance s1 code",46,nil,UI.importMixCode)
+        UI.button(px2+pw2-156,py2+56,68,30,"Paste","codepaste",UI.pasteMixCode,"soft",46,
             "Paste if this Matcha build supports clipboard reading")
-        button(px2+pw2-80,py2+56,66,30,"Load","codeload",importMixCode,"primary",46,
+        UI.button(px2+pw2-80,py2+56,66,30,"Load","codeload",UI.importMixCode,"primary",46,
             "Import this mix without automatically equipping it")
     end
 end
-local function findPreset(id)
+function UI.findPreset(id)
     for i, p in ipairs(State.presets) do if p.id == id then return p, i end end
     return nil
 end
-local function createFromMix()
+function UI.createFromMix()
     local name = UI.pName:gsub("^%s+", ""):gsub("%s+$", "")
     if name == "" then name = "Preset " .. (#State.presets + 1) end
-    local pr = { id = newId(), name = name, slots = copySlots(State.mix) }
+    local pr = { id = UI.newId(), name = name, slots = UI.copySlots(State.mix) }
     State.presets[#State.presets + 1] = pr
     UI.pSel = pr.id
     UI.pName = ""
-    blur()
+    UI.blur()
     markDirty()
-    toast("Preset created", "good")
+    UI.toast("Preset created", "good")
 end
-local function renderPresets(x, y, w, h)
-    local cw = btnW("Save current mix")
-    input(x, y, w - cw - 8, 32, UI, "pName", "pname", "Name a new preset", 20, nil, createFromMix)
-    button(x + w - cw, y, cw, 32, "Save current mix", "pcreate", createFromMix, "primary", 20,
+function UI.renderPresets(x, y, w, h)
+    local cw = UI.btnW("Save current mix")
+    UI.input(x, y, w - cw - 8, 32, UI, "pName", "pname", "Name a new preset", 20, nil, UI.createFromMix)
+    UI.button(x + w - cw, y, cw, 32, "Save current mix", "pcreate", UI.createFromMix, "primary", 20,
         "Create a preset from Mix & Match")
-    input(x, y + 42, w, 32, UI, "pSearch", "psearch", "Search presets", 20, function() UI.pPage = 1 end)
+    UI.input(x, y + 42, w, 32, UI, "pSearch", "psearch", "Search presets", 20, function() UI.pPage = 1 end)
     local top = y + 86
     local bodyH = h - 86
     local lw = math.max(220, math.floor(w * 0.46))
@@ -1346,50 +1346,50 @@ local function renderPresets(x, y, w, h)
     local pages = math.max(1, math.ceil(#list / per))
     UI.pPage = math.clamp(UI.pPage, 1, pages)
     local i0 = (UI.pPage - 1) * per
-    if not (UI.pSel and findPreset(UI.pSel)) then UI.pSel = list[1] and list[1].id or nil end
+    if not (UI.pSel and UI.findPreset(UI.pSel)) then UI.pSel = list[1] and list[1].id or nil end
     for k = 1, per do
         local p = list[i0 + k]
         if not p then break end
         local ry = top + (k - 1) * (rowH + gap)
         local sel = UI.pSel == p.id
-        local hov = hit(x, ry, lw, rowH)
-        card(x, ry, lw, rowH, 16, 10, sel and "sel" or (hov and "hov" or nil))
+        local hov = UI.hit(x, ry, lw, rowH)
+        UI.card(x, ry, lw, rowH, 16, 10, sel and "sel" or (hov and "hov" or nil))
         local cnt = 0
         for _, slot in ipairs(SLOTS) do if p.slots[slot] then cnt = cnt + 1 end end
         txt(fit(p.name, lw - 80, FS), x + 14, ry + rowH / 2, FS, TH.text, 14)
         txt(cnt .. "/8", x + lw - 30, ry + rowH / 2, FS - 2, TH.sub, 14, true)
-        reg(x, ry, lw, rowH, "pr" .. p.id, function()
+        UI.reg(x, ry, lw, rowH, "pr" .. p.id, function()
             UI.pSel = p.id; UI.pRenaming = false; UI.delConfirm = nil
         end)
     end
     if #list == 0 then
         if #State.presets == 0 then
-            emptyState(x, top, lw, bodyH - footH, "No presets yet", "Build a mix, then save it here.")
+            UI.emptyState(x, top, lw, bodyH - footH, "No presets yet", "Build a mix, then save it here.")
         else
-            emptyState(x, top, lw, bodyH - footH, "No presets match", "Try a different search.")
+            UI.emptyState(x, top, lw, bodyH - footH, "No presets match", "Try a different search.")
         end
     end
     if pages > 1 then
-        footer(x, top + bodyH - footH, lw, "pPage", pages, #list, i0 + 1, math.min(i0 + per, #list), "pp", false)
+        UI.footer(x, top + bodyH - footH, lw, "pPage", pages, #list, i0 + 1, math.min(i0 + per, #list), "pp", false)
     end
     local px, pw = x + lw + 12, w - lw - 12
-    card(px, top, pw, bodyH, 22, 10)
-    local pr = UI.pSel and findPreset(UI.pSel)
+    UI.card(px, top, pw, bodyH, 22, 10)
+    local pr = UI.pSel and UI.findPreset(UI.pSel)
     if not pr then
-        emptyState(px, top, pw, bodyH, "Select a preset", "Its states and actions show up here.")
+        UI.emptyState(px, top, pw, bodyH, "Select a preset", "Its states and actions show up here.")
         return
     end
     local ix, iw = px + 16, pw - 32
     if UI.pRenaming then
         local function commitRename()
             local nm = UI.pRename:gsub("^%s+", ""):gsub("%s+$", "")
-            if nm ~= "" then pr.name = nm; markDirty(); toast("Preset renamed", "good") end
-            UI.pRenaming = false; blur()
+            if nm ~= "" then pr.name = nm; markDirty(); UI.toast("Preset renamed", "good") end
+            UI.pRenaming = false; UI.blur()
         end
-        input(ix, top + 14, iw - 148, 30, UI, "pRename", "prename", "Preset name", 20, nil, commitRename)
-        button(ix + iw - 140, top + 14, 66, 30, "Save", "rensave", commitRename, "primary", 20)
-        button(ix + iw - 68, top + 14, 68, 30, "Cancel", "rencancel", function()
-            UI.pRenaming = false; blur()
+        UI.input(ix, top + 14, iw - 148, 30, UI, "pRename", "prename", "Preset name", 20, nil, commitRename)
+        UI.button(ix + iw - 140, top + 14, 66, 30, "Save", "rensave", commitRename, "primary", 20)
+        UI.button(ix + iw - 68, top + 14, 68, 30, "Cancel", "rencancel", function()
+            UI.pRenaming = false; UI.blur()
         end, "soft", 20)
     else
         txt(fit(pr.name, iw, FS + 3), ix, top + 28, FS + 3, TH.text, 14, false, true)
@@ -1398,32 +1398,32 @@ local function renderPresets(x, y, w, h)
     local bw3 = math.floor((iw - gap2 * 2) / 3)
     local by1 = top + 54
     local by2 = by1 + 34
-    button(ix, by1, bw3, 28, "Apply", "papply", function()
-        State.mix = copySlots(pr.slots); markDirty(); applyMix()
+    UI.button(ix, by1, bw3, 28, "Apply", "papply", function()
+        State.mix = UI.copySlots(pr.slots); markDirty(); UI.applyMix()
     end, "primary", 20)
-    button(ix + bw3 + gap2, by1, bw3, 28, "Rename", "prenm", function()
-        UI.pRenaming = true; UI.pRename = pr.name; focusInput("prename")
+    UI.button(ix + bw3 + gap2, by1, bw3, 28, "Rename", "prenm", function()
+        UI.pRenaming = true; UI.pRename = pr.name; UI.focusInput("prename")
     end, "soft", 20)
-    button(ix + (bw3 + gap2) * 2, by1, bw3, 28, "Duplicate", "pdup", function()
-        local d2 = { id = newId(), name = pr.name .. " copy", slots = copySlots(pr.slots) }
+    UI.button(ix + (bw3 + gap2) * 2, by1, bw3, 28, "Duplicate", "pdup", function()
+        local d2 = { id = UI.newId(), name = pr.name .. " copy", slots = UI.copySlots(pr.slots) }
         State.presets[#State.presets + 1] = d2
-        UI.pSel = d2.id; markDirty(); toast("Preset duplicated", "info")
+        UI.pSel = d2.id; markDirty(); UI.toast("Preset duplicated", "info")
     end, "soft", 20)
-    button(ix, by2, bw3, 28, "Overwrite", "pover", function()
-        pr.slots = copySlots(State.mix); markDirty(); toast("Preset updated from current mix", "good")
+    UI.button(ix, by2, bw3, 28, "Overwrite", "pover", function()
+        pr.slots = UI.copySlots(State.mix); markDirty(); UI.toast("Preset updated from current mix", "good")
     end, "soft", 20, "Replace this preset with your current mix")
-    button(ix + bw3 + gap2, by2, bw3, 28, "Export", "pexp", function()
+    UI.button(ix + bw3 + gap2, by2, bw3, 28, "Export", "pexp", function()
         local ok = pcall(function()
             setclipboard(HttpService:JSONEncode({ name = pr.name, slots = pr.slots }))
         end)
-        toast(ok and "Preset JSON copied to clipboard" or "Could not copy", ok and "good" or "bad")
+        UI.toast(ok and "Preset JSON copied to clipboard" or "Could not copy", ok and "good" or "bad")
     end, "soft", 20, "Copy as JSON")
     local confirming = UI.delConfirm and UI.delConfirm.id == pr.id and tick() < UI.delConfirm.t
-    button(ix + (bw3 + gap2) * 2, by2, bw3, 28, confirming and "Confirm" or "Delete", "pdel", function()
+    UI.button(ix + (bw3 + gap2) * 2, by2, bw3, 28, confirming and "Confirm" or "Delete", "pdel", function()
         if confirming then
-            local _, i = findPreset(pr.id)
+            local _, i = UI.findPreset(pr.id)
             if i then table.remove(State.presets, i) end
-            UI.delConfirm = nil; UI.pSel = nil; markDirty(); toast("Preset deleted", "info")
+            UI.delConfirm = nil; UI.pSel = nil; markDirty(); UI.toast("Preset deleted", "info")
         else
             UI.delConfirm = { id = pr.id, t = tick() + 3 }
         end
@@ -1453,7 +1453,7 @@ for i = 0x30, 0x39 do VK_NAMES[i] = string.char(i) end
 for i = 0x41, 0x5A do VK_NAMES[i] = string.char(i) end
 for i = 0, 9 do VK_NAMES[0x60 + i] = "Num " .. i end
 for i = 1, 12 do VK_NAMES[0x6F + i] = "F" .. i end
-local function vkName(vk)
+function UI.vkName(vk)
     return VK_NAMES[vk] or string.format("Key 0x%02X", vk)
 end
 local BIND_DEFS = {
@@ -1463,10 +1463,10 @@ local BIND_DEFS = {
     { "undo",    "Undo",              "Swap back to the previous animation" },
     { "restore", "Restore default",   "Back to your normal animations" },
 }
-local function renderControls(x, y, w, h)
+function UI.renderControls(x, y, w, h)
     local rowH = 46
     local ch = (2 + #BIND_DEFS) * rowH + 16
-    card(x, y, w, ch, 22, 10)
+    UI.card(x, y, w, ch, 22, 10)
     local ry = y + 8
     local function row(label, desc, build)
         txt(label, x + 18, ry + 15, FS, TH.text, 14, false, true)
@@ -1475,7 +1475,7 @@ local function renderControls(x, y, w, h)
         ry = ry + rowH
     end
     row("Auto-reapply on respawn", "Re-equips your animation when you respawn or rejoin", function(rE, ty)
-        segmented(rE - 124, ty, 124, 30, { {true, "On"}, {false, "Off"} }, State.autoReapply,
+        UI.segmented(rE - 124, ty, 124, 30, { {true, "On"}, {false, "Off"} }, State.autoReapply,
             function(v)
                 State.autoReapply=v
                 if engine and type(engine.SetAutoReapply)=="function" then pcall(engine.SetAutoReapply,v) end
@@ -1483,7 +1483,7 @@ local function renderControls(x, y, w, h)
             end, 20, "autore")
     end)
     row("Swap wheel shows", "What the wheel offers", function(rE, ty)
-        segmented(rE - 244, ty, 244, 30, { {"both", "Both"}, {"favs", "Favorites"}, {"presets", "Presets"} },
+        UI.segmented(rE - 244, ty, 244, 30, { {"both", "Both"}, {"favs", "Favorites"}, {"presets", "Presets"} },
             State.wheelMode, function(v) State.wheelMode = v; markDirty() end, 20, "wmode")
     end)
     for _, d in ipairs(BIND_DEFS) do
@@ -1494,16 +1494,16 @@ local function renderControls(x, y, w, h)
             local bw = 128
             local bx = rE - bw
             if vk ~= 0 then
-                button(rE - 26, ty, 26, 30, "x", "unbind" .. id, function()
+                UI.button(rE - 26, ty, 26, 30, "x", "unbind" .. id, function()
                     State.binds[id] = 0; markDirty()
                 end, "ghost", 20, "Clear this bind", FS - 2)
                 bx = rE - 26 - 6 - bw
             end
-            button(bx, ty, bw, 30, capturing and "Press a key..." or (vk ~= 0 and vkName(vk) or "Not set"),
+            UI.button(bx, ty, bw, 30, capturing and "Press a key..." or (vk ~= 0 and UI.vkName(vk) or "Not set"),
                 "bind" .. id, function()
                     if UI.binding == id then UI.binding = nil else UI.binding = id end
                     UI.bindGuard = tick() + 0.2
-                    blur()
+                    UI.blur()
                 end, capturing and "primary" or "soft", 20, "Click, then press a key")
         end)
     end
@@ -1511,11 +1511,11 @@ local function renderControls(x, y, w, h)
         or "Hotkeys work with the window closed. They pause while a text box is focused."
     txt(hint, x + 4, y + ch + 16, FS - 2, UI.binding and TH.accentHi or TH.mute, 14)
 end
-local function renderAppearance(x, y, w, h)
+function UI.renderAppearance(x, y, w, h)
     local rowH = 46
     local rows = 6
     local ch = rows * rowH + 16
-    card(x, y, w, ch, 22, 10)
+    UI.card(x, y, w, ch, 22, 10)
     local ry = y + 8
     local function row(label, desc, build)
         txt(label, x + 18, ry + 15, FS, TH.text, 14, false, true)
@@ -1525,7 +1525,7 @@ local function renderAppearance(x, y, w, h)
     end
     local function seg(rEdge, ty, opts, per, sel, fn, id)
         local sw2 = per * #opts + 4
-        segmented(rEdge - sw2, ty, sw2, 30, opts, sel, fn, 20, id)
+        UI.segmented(rEdge - sw2, ty, sw2, 30, opts, sel, fn, 20, id)
     end
     row("Theme", "Base colors", function(rE, ty)
         seg(rE, ty, { {"Mono", "Mono"}, {"Purple", "Purple"}, {"Dark", "Dark"}, {"Midnight", "Midnight"} }, 84, State.theme,
@@ -1539,7 +1539,7 @@ local function renderAppearance(x, y, w, h)
             local px = sx + i * 34
             local py = ty + 2
             local sel = State.accent == i
-            local hov = hit(px, py, 26, 26)
+            local hov = UI.hit(px, py, 26, 26)
             if sel then
                 rect(px - 3, py - 3, 32, 32, TH.text, 20, 16)
                 rect(px - 1, py - 1, 28, 28, TH.card, 21, 14)
@@ -1547,7 +1547,7 @@ local function renderAppearance(x, y, w, h)
                 rect(px - 2, py - 2, 30, 30, TH.lineHi, 20, 15)
             end
             rect(px, py, 26, 26, col, 22, 13)
-            reg(px, py, 26, 26, "acc" .. i, function() State.accent = i; buildTheme(); markDirty() end,
+            UI.reg(px, py, 26, 26, "acc" .. i, function() State.accent = i; buildTheme(); markDirty() end,
                 i == 0 and "Theme default" or nil)
         end
     end)
@@ -1567,11 +1567,11 @@ local function renderAppearance(x, y, w, h)
         seg(rE, ty, { {true, "Rounded"}, {false, "Square"} }, 90, State.rounded,
             function(v) State.rounded = v; markDirty() end, "round")
     end)
-    button(x, y + ch + 12, 170, 32, "Reset appearance", "resetapp", function()
+    UI.button(x, y + ch + 12, 170, 32, "Reset appearance", "resetapp", function()
         local d = defaultState()
         State.theme, State.accent, State.scale, State.opacity = d.theme, d.accent, d.scale, d.opacity
         State.textSize, State.compact, State.rounded = d.textSize, d.compact, d.rounded
-        buildTheme(); markDirty(); toast("Appearance reset", "info")
+        buildTheme(); markDirty(); UI.toast("Appearance reset", "info")
     end, "danger", 20)
 end
 do
@@ -1586,12 +1586,12 @@ local EMOTE_DEFAULTS = {
 }
 local function copyEmoteCommand(name)
     if not UI.emoteEngine or type(UI.emoteEngine.Command)~="function" then
-        toast("Emote adapter unavailable","bad");return
+        UI.toast("Emote adapter unavailable","bad");return
     end
     local command,reason=UI.emoteEngine.Command(name)
-    if not command then toast(reason or "Unknown emote","bad");return end
+    if not command then UI.toast(reason or "Unknown emote","bad");return end
     local ok=pcall(function() setclipboard(command) end)
-    toast(ok and ("Copied "..command.." to clipboard") or "Clipboard copy unavailable",ok and "good" or "bad")
+    UI.toast(ok and ("Copied "..command.." to clipboard") or "Clipboard copy unavailable",ok and "good" or "bad")
 end
 local function toggleEmoteFavorite(name)
     if State.emoteFavorites[name] then
@@ -1604,7 +1604,7 @@ end
 local function playStanceEmote(name)
     if UI.emoteBusy then return end
     if not UI.emoteEngine or type(UI.emoteEngine.Play)~="function" then
-        toast("Emote adapter unavailable: "..tostring(UI.emoteEngineError),"bad")
+        UI.toast("Emote adapter unavailable: "..tostring(UI.emoteEngineError),"bad")
         return
     end
     UI.emoteBusy=true
@@ -1612,8 +1612,8 @@ local function playStanceEmote(name)
     local wasVisible=UI.visible
     if allowKeyboard then
         UI.visible=false
-        blur()
-        syncInput(true)
+        UI.blur()
+        UI.syncInput(true)
     end
     task.spawn(function()
         if allowKeyboard then task.wait(0.16) end
@@ -1621,13 +1621,13 @@ local function playStanceEmote(name)
         UI.emoteBusy=false
         if not ok or not success then
             if wasVisible and allowKeyboard then UI.visible=true end
-            toast("Emote could not play: "..tostring(ok and detail or success),"warn")
+            UI.toast("Emote could not play: "..tostring(ok and detail or success),"warn")
         elseif detail and tostring(detail):find("Keyboard command sent",1,true) then
-            toast(tostring(detail),"info")
+            UI.toast(tostring(detail),"info")
         else
-            toast("Emote requested: "..name,"good")
+            UI.toast("Emote requested: "..name,"good")
             UI.visible=false
-            syncInput(true)
+            UI.syncInput(true)
         end
     end)
 end
@@ -1635,7 +1635,7 @@ local function tryEmoteId()
     if UI.emoteBusy then return end
     if not UI.emoteEngine or type(UI.emoteEngine.PlayId)~="function" then
         UI.emoteTestResult="Emote module missing PlayId; reload StanceDev."
-        toast(UI.emoteTestResult,"bad")
+        UI.toast(UI.emoteTestResult,"bad")
         return
     end
     UI.emoteBusy=true
@@ -1645,11 +1645,11 @@ local function tryEmoteId()
         UI.emoteBusy=false
         UI.emoteTestResult=tostring(ok and detail or success)
         if ok and success then
-            toast("Custom emote request sent (check visually)","info")
+            UI.toast("Custom emote request sent (check visually)","info")
             UI.visible=false
-            syncInput(true)
+            UI.syncInput(true)
         else
-            toast("Emote test failed; check Test status","warn")
+            UI.toast("Emote test failed; check Test status","warn")
         end
     end)
 end
@@ -1657,42 +1657,42 @@ local function stopEmoteId()
     if UI.emoteEngine and type(UI.emoteEngine.Stop)=="function" then
         local ok,stopped,reason=pcall(UI.emoteEngine.Stop)
         UI.emoteTestResult=tostring(ok and reason or stopped)
-        toast(UI.emoteTestResult,"info")
+        UI.toast(UI.emoteTestResult,"info")
     else
         UI.emoteTestResult="No custom emote adapter loaded"
-        toast(UI.emoteTestResult,"warn")
+        UI.toast(UI.emoteTestResult,"warn")
     end
 end
 local function inspectStanceEmotes()
     if not UI.emoteEngine or type(UI.emoteEngine.Inspect)~="function" then
         UI.emoteTestResult="Inspection unavailable; reload the latest Dev script"
-        toast(UI.emoteTestResult,"warn")
+        UI.toast(UI.emoteTestResult,"warn")
         return
     end
     local ok,success,reason=pcall(UI.emoteEngine.Inspect)
     UI.emoteTestResult=tostring(ok and reason or success)
-    toast(ok and success and "Emote probe printed to Matcha console"
+    UI.toast(ok and success and "Emote probe printed to Matcha console"
         or "Emote probe failed; see status",ok and success and "info" or "warn")
 end
 UI.renderEmotes = function(x,y,w,h)
     txt("ROBLOX EMOTES - DEV",x+2,y+16,FS-1,TH.text,14,false,true)
-    segmented(x+w-224,y,224,30,{{"test","Test ID"},{"standard","Standard"}},
-        UI.emoteView,function(v) UI.emoteView=v;blur() end,20,"emoteView")
+    UI.segmented(x+w-224,y,224,30,{{"test","Test ID"},{"standard","Standard"}},
+        UI.emoteView,function(v) UI.emoteView=v;UI.blur() end,20,"emoteView")
     if UI.emoteView=="test" then
         local ty=y+46
-        card(x,ty,w,215,22,12)
+        UI.card(x,ty,w,215,22,12)
         txt("Cute Wave / arbitrary ID test",x+18,ty+28,FS+2,TH.text,15,false,true)
         txt("Uses a copied Animation and Animator:LoadAnimation. Does not change your movement packs.",
             x+18,ty+50,FS-3,TH.mute,15)
         txt("ANIMATION ASSET ID",x+18,ty+77,FS-3,TH.sub,15)
-        input(x+18,ty+89,w-36,34,UI,"emoteTestId","emoteAssetId","85402831040149",20)
-        button(x+18,ty+136,115,34,UI.emoteBusy and "Working..." or "Play test",
+        UI.input(x+18,ty+89,w-36,34,UI,"emoteTestId","emoteAssetId","85402831040149",20)
+        UI.button(x+18,ty+136,115,34,UI.emoteBusy and "Working..." or "Play test",
             "emotePlayId",not UI.emoteBusy and tryEmoteId or nil,
             UI.emoteBusy and "disabled" or "primary",20,
             "Test playback using an existing Animation template; may be unsupported in Matcha")
-        button(x+144,ty+136,95,34,"Stop","emoteStopId",stopEmoteId,"soft",20,
+        UI.button(x+144,ty+136,95,34,"Stop","emoteStopId",stopEmoteId,"soft",20,
             "Stop only the custom Stance emote track")
-        button(x+248,ty+136,120,34,"Inspect rig","emoteInspect",
+        UI.button(x+248,ty+136,120,34,"Inspect rig","emoteInspect",
             inspectStanceEmotes,"soft",20,
             "Read-only check of Animate emote folders and supported methods")
         txt("TEST STATUS",x+18,ty+186,FS-3,TH.sub,15,false,true)
@@ -1708,22 +1708,22 @@ UI.renderEmotes = function(x,y,w,h)
             end
         end
         txt(fit(reported,w-175,FS-2),x+110,ty+186,FS-2,TH.text,15)
-        reg(x+104,ty+171,w-122,28,"emoteTestStatus",nil,reported)
+        UI.reg(x+104,ty+171,w-122,28,"emoteTestStatus",nil,reported)
         txt("If this is an emote catalog item ID, we may need its underlying clip ID.",
             x+3,ty+241,FS-2,TH.mute,15)
         return
     end
     txt("Standard /e commands",x+2,y+55,FS-2,TH.sub,14)
-    button(x+w-174,y+40,174,30,State.emoteChatFallback and "Chat fallback: ON" or "Chat fallback: OFF",
+    UI.button(x+w-174,y+40,174,30,State.emoteChatFallback and "Chat fallback: ON" or "Chat fallback: OFF",
         "emoteFallback",function()
             State.emoteChatFallback=not State.emoteChatFallback
             markDirty()
-            toast(State.emoteChatFallback and "Experimental chat input enabled; may type into chat"
+            UI.toast(State.emoteChatFallback and "Experimental chat input enabled; may type into chat"
                 or "Chat input disabled; native method only","info")
         end,State.emoteChatFallback and "accent" or "soft",20,
         "Opt-in keyboard typing of /e commands when direct Roblox emote calls are unavailable")
-    input(x,y+78,w-180,30,UI,"emoteSearch","emoteSearchBox","Search emotes",20)
-    segmented(x+w-170,y+78,170,30,{{"all","All"},{"saved","Saved"}},
+    UI.input(x,y+78,w-180,30,UI,"emoteSearch","emoteSearchBox","Search emotes",20)
+    UI.segmented(x+w-170,y+78,170,30,{{"all","All"},{"saved","Saved"}},
         UI.emoteFilter,function(v) UI.emoteFilter=v end,20,"emoteFilter")
     local list={}
     local search=UI.emoteSearch:lower()
@@ -1742,24 +1742,24 @@ UI.renderEmotes = function(x,y,w,h)
         local rx=x+col*(cellW+gap)
         local ry=y+118+row*(rowH+gap)
         if ry+rowH<=y+h+2 then
-            card(rx,ry,cellW,rowH,13,12,nil,TH.ctl)
+            UI.card(rx,ry,cellW,rowH,13,12,nil,TH.ctl)
             txt(fit(emote[2],cellW-164,FS),rx+12,ry+18,FS,TH.text,15,false,true)
             txt(fit(emote[3],cellW-164,FS-3),rx+12,ry+38,FS-3,TH.mute,15)
             local name=emote[1]
-            button(rx+cellW-132,ry+10,53,31,"Play","emotePlay"..name,function()
+            UI.button(rx+cellW-132,ry+10,53,31,"Play","emotePlay"..name,function()
                 playStanceEmote(name)
             end,"primary",20,"Try Roblox native emote; optional chat fallback")
-            button(rx+cellW-75,ry+10,42,31,"/e","emoteCopy"..name,function()
+            UI.button(rx+cellW-75,ry+10,42,31,"/e","emoteCopy"..name,function()
                 copyEmoteCommand(name)
             end,"soft",20,"Copy /e command for Roblox chat")
-            button(rx+cellW-29,ry+10,23,31,State.emoteFavorites[name] and "*" or "+",
+            UI.button(rx+cellW-29,ry+10,23,31,State.emoteFavorites[name] and "*" or "+",
                 "emoteFav"..name,function() toggleEmoteFavorite(name) end,
                 State.emoteFavorites[name] and "accent" or "ghost",20,
                 State.emoteFavorites[name] and "Remove from saved emotes" or "Save emote")
         end
     end
     if #list==0 then
-        emptyState(x,y+118,w,h-118,"No emotes found",
+        UI.emptyState(x,y+118,w,h-118,"No emotes found",
             UI.emoteFilter=="saved" and "Save one from All to see it here." or "Try another search.")
     end
 end
@@ -1786,11 +1786,11 @@ local SB_X, SB_W = 14, 78
 local PANEL_X = SB_X + SB_W + 10
 local CX = PANEL_X + 26
 local CT = 176
-local function renderHome(x, y, w, h)
+function UI.renderHome(x, y, w, h)
     local gap = 12
     local cardW = math.floor((w - gap * 2) / 3)
     local cardH = 164
-    local eq = equippedLabel()
+    local eq = UI.equippedLabel()
     local sub1
     if State.equipped == "mix" then sub1 = "Custom mix"
     elseif State.equipped and PACK_BY_ID[State.equipped] then sub1 = PACK_BY_ID[State.equipped].states .. "/8 states"
@@ -1803,33 +1803,33 @@ local function renderHome(x, y, w, h)
     local wk = State.binds.wheel or 0
     local cards = {
         { "01", "Animation", "What your character plays", eq or "Default", sub1, "Browse packs", "Browse" },
-        { "02", "Mix", "Per-state overrides", mixCount() .. "/8 states", sub2, "Configure mix", "MixMatch" },
-        { "03", "Controls", "How you swap quickly", wk ~= 0 and (vkName(wk) .. " wheel") or "No wheel key",
+        { "02", "Mix", "Per-state overrides", UI.mixCount() .. "/8 states", sub2, "Configure mix", "MixMatch" },
+        { "03", "Controls", "How you swap quickly", wk ~= 0 and (UI.vkName(wk) .. " wheel") or "No wheel key",
           "Auto-reapply " .. (State.autoReapply and "on" or "off"), "Configure controls", "Controls" },
     }
     for i, c in ipairs(cards) do
         local x0 = x + (i - 1) * (cardW + gap)
-        card(x0, y, cardW, cardH, 22, 10)
+        UI.card(x0, y, cardW, cardH, 22, 10)
         txt(c[1], x0 + 20, y + 26, FS, TH.mute, 14)
         txt(c[2], x0 + 48, y + 26, FS, TH.text, 14)
         txt(fit(c[3], cardW - 40, FS - 3), x0 + 20, y + 47, FS - 3, TH.mute, 14)
         txt(fit(c[4], cardW - 40, FS + 5), x0 + 20, y + 78, FS + 5, TH.text, 14)
         txt(fit(c[5], cardW - 40, FS - 2), x0 + 20, y + 101, FS - 2, TH.sub, 14)
         local target = c[7]
-        button(x0 + 18, y + cardH - 18 - 32, cardW - 36, 32, c[6], "home" .. i,
-            function() UI.page = target; blur() end, "soft", 20)
+        UI.button(x0 + 18, y + cardH - 18 - 32, cardW - 36, 32, c[6], "home" .. i,
+            function() UI.page = target; UI.blur() end, "soft", 20)
     end
     local py = y + cardH + gap
     local ph = h - cardH - gap
-    card(x, py, w, ph, 22, 10)
+    UI.card(x, py, w, ph, 22, 10)
     txt("Your library", x + 22, py + 28, FS + 1, TH.text, 14, false, true)
     txt(tostring(#PACKS) .. " packs  |  " .. tostring(#State.favs) .. " favorites  |  "
         .. tostring(#State.presets) .. " presets",
         x + 22, py + 50, FS - 2, TH.sub, 14)
-    button(x + 20, py + 66, 140, 30, "Browse packs", "quickbrowse", function() UI.page = "Browse" end, "primary", 20)
-    button(x + 168, py + 66, 124, 30, "Favorites", "quickfav", function() UI.page = "Favorites" end, "soft", 20)
-    button(x + 300, py + 66, 138, 30, "Mix & Match", "quickmix", function() UI.page = "MixMatch" end, "soft", 20)
-    button(x + 446, py + 66, 140, 30, "Emotes", "quickemotes", function() UI.page="Emotes" end, "soft", 20)
+    UI.button(x + 20, py + 66, 140, 30, "Browse packs", "quickbrowse", function() UI.page = "Browse" end, "primary", 20)
+    UI.button(x + 168, py + 66, 124, 30, "Favorites", "quickfav", function() UI.page = "Favorites" end, "soft", 20)
+    UI.button(x + 300, py + 66, 138, 30, "Mix & Match", "quickmix", function() UI.page = "MixMatch" end, "soft", 20)
+    UI.button(x + 446, py + 66, 140, 30, "Emotes", "quickemotes", function() UI.page="Emotes" end, "soft", 20)
     local recentY = py + 112
     if #State.recent > 0 and recentY + 30 < py + ph then
         txt("RECENTLY EQUIPPED", x + 22, recentY, FS - 3, TH.mute, 14, false, true)
@@ -1839,35 +1839,35 @@ local function renderHome(x, y, w, h)
             if p then
                 local ry = recentY + 18 + (i - 1) * 32
                 txt(fit(p.name, w - 146, FS - 1), x + 22, ry, FS - 1, TH.text, 14)
-                button(x + w - 90, ry - 14, 68, 27, "Wear", "recent" .. i, function() equipPack(p) end, "soft", 20)
+                UI.button(x + w - 90, ry - 14, 68, 27, "Wear", "recent" .. i, function() UI.equipPack(p) end, "soft", 20)
             end
         end
     end
 end
-local function renderWindow()
+function UI.renderWindow()
     local W, H, W0 = UI.W, UI.H, UI.W0
     local cw = (W0 - 14 - 26) - CX
     local ch = (H - 14 - 82 - 14) - CT
     rect(0, 0, W, H, TH.bg, 2, 30)
-    card(SB_X, 14, SB_W, H - 28, SB_W / 2, 4, nil, TH.side)
-    card(PANEL_X, 14, W0 - 14 - PANEL_X, H - 28, 28, 4)
+    UI.card(SB_X, 14, SB_W, H - 28, SB_W / 2, 4, nil, TH.side)
+    UI.card(PANEL_X, 14, W0 - 14 - PANEL_X, H - 28, 28, 4)
     local ncx = SB_X + SB_W / 2
     local function nav(key, label, cy)
         local active = UI.page == key
-        local hov = hit(ncx - 32, cy - 26, 64, 66)
+        local hov = UI.hit(ncx - 32, cy - 26, 64, 66)
         if active then
-            circle(ncx, cy, 28, TH.text, 6)
-            circle(ncx, cy, 27, TH.bg, 7)
-            circle(ncx, cy, 22, TH.text, 8)
-            icon(PAGE_ICON[key], ncx, cy, TH.bg, 24)
+            UI.circle(ncx, cy, 28, TH.text, 6)
+            UI.circle(ncx, cy, 27, TH.bg, 7)
+            UI.circle(ncx, cy, 22, TH.text, 8)
+            UI.icon(PAGE_ICON[key], ncx, cy, TH.bg, 24)
         else
-            circle(ncx, cy, 22, hov and TH.lineHi or TH.line, 6)
-            circle(ncx, cy, 21, hov and TH.ctl or TH.bg, 7)
-            icon(PAGE_ICON[key], ncx, cy, hov and TH.text or TH.sub, 24)
+            UI.circle(ncx, cy, 22, hov and TH.lineHi or TH.line, 6)
+            UI.circle(ncx, cy, 21, hov and TH.ctl or TH.bg, 7)
+            UI.icon(PAGE_ICON[key], ncx, cy, hov and TH.text or TH.sub, 24)
         end
         txt(label, ncx, cy + 36, FS - 3, active and TH.text or TH.mute, 24, true)
-        reg(ncx - 32, cy - 26, 64, 66, "nav" .. key, function()
-            UI.page = key; UI.jump = ""; UI.binding = nil; blur()
+        UI.reg(ncx - 32, cy - 26, 64, 66, "nav" .. key, function()
+            UI.page = key; UI.jump = ""; UI.binding = nil; UI.blur()
         end)
     end
     local navStep=H<655 and 63 or 72
@@ -1876,16 +1876,16 @@ local function renderWindow()
     local hy = 46
     local rE = CX + cw
     local function circBtn(cxc, id, fn, tip, iconName, active)
-        local hov = hit(cxc - 15, hy - 15, 30, 30)
-        circle(cxc, hy, 15, active and TH.text or (hov and TH.lineHi or TH.line), 20)
-        circle(cxc, hy, 14, active and TH.text or (hov and TH.ctl or TH.bg), 21)
-        icon(iconName, cxc, hy, active and TH.bg or (hov and TH.text or TH.sub), 24)
-        reg(cxc - 15, hy - 15, 30, 30, id, fn, tip)
+        local hov = UI.hit(cxc - 15, hy - 15, 30, 30)
+        UI.circle(cxc, hy, 15, active and TH.text or (hov and TH.lineHi or TH.line), 20)
+        UI.circle(cxc, hy, 14, active and TH.text or (hov and TH.ctl or TH.bg), 21)
+        UI.icon(iconName, cxc, hy, active and TH.bg or (hov and TH.text or TH.sub), 24)
+        UI.reg(cxc - 15, hy - 15, 30, 30, id, fn, tip)
     end
-    circBtn(rE - 15, "close", function() UI.visible = false; blur() end, "Close (F4)", "close", false)
+    circBtn(rE - 15, "close", function() UI.visible = false; UI.blur() end, "Close (F4)", "close", false)
     local sx = rE - 118
-    button(sx, hy - 15, 78, 30, "Search", "gsearch", function()
-        UI.page = "Browse"; focusInput("bsearch")
+    UI.button(sx, hy - 15, 78, 30, "Search", "gsearch", function()
+        UI.page = "Browse"; UI.focusInput("bsearch")
     end, "soft", 20, "Search animation packs")
     local hr=PlaybackHealth.report
     local rig=PlaybackHealth.rig
@@ -1904,26 +1904,26 @@ local function renderWindow()
     local stw=tw(st,FS - 3)
     local hx=sx-18-stw
     txt(st,hx,hy,FS-3,healthColor,14)
-    circle(hx-12,hy,3,healthColor,14)
-    reg(hx-17,hy-16,stw+19,32,"health",nil,
+    UI.circle(hx-12,hy,3,healthColor,14)
+    UI.reg(hx-17,hy-16,stw+19,32,"health",nil,
         hr and (tostring(hr.reason or "") .. " | Sync refers to memory IDs, not visual playback")
         or "Checking Roblox rig and memory offsets")
     txt("S T A N C E", CX, hy, FS - 3, TH.text, 14)
     txt(PAGE_TITLE[UI.page], CX, 112, FS + 20, TH.text, 14)
     txt(PAGE_SUB[UI.page], CX, 146, FS - 2, TH.mute, 14)
-    if     UI.page == "Home"       then renderHome(CX, CT, cw, ch)
-    elseif UI.page == "Browse"     then renderPackList(CX, CT, cw, ch, "b")
-    elseif UI.page == "Favorites"  then renderPackList(CX, CT, cw, ch, "f")
-    elseif UI.page == "MixMatch"   then renderMix(CX, CT, cw, ch)
-    elseif UI.page == "Presets"    then renderPresets(CX, CT, cw, ch)
+    if     UI.page == "Home"       then UI.renderHome(CX, CT, cw, ch)
+    elseif UI.page == "Browse"     then UI.renderPackList(CX, CT, cw, ch, "b")
+    elseif UI.page == "Favorites"  then UI.renderPackList(CX, CT, cw, ch, "f")
+    elseif UI.page == "MixMatch"   then UI.renderMix(CX, CT, cw, ch)
+    elseif UI.page == "Presets"    then UI.renderPresets(CX, CT, cw, ch)
     elseif UI.page == "Emotes"     then UI.renderEmotes(CX, CT, cw, ch)
-    elseif UI.page == "Controls"   then renderControls(CX, CT, cw, ch)
-    elseif UI.page == "Appearance" then renderAppearance(CX, CT, cw, ch)
+    elseif UI.page == "Controls"   then UI.renderControls(CX, CT, cw, ch)
+    elseif UI.page == "Appearance" then UI.renderAppearance(CX, CT, cw, ch)
     end
     local fy0 = H - 14 - 82
     rect(CX, fy0, cw, 1, TH.line, 5)
-    local eqL = equippedLabel()
-    circle(CX + 4, fy0 + 24, 3, eqL and TH.good or TH.mute, 8)
+    local eqL = UI.equippedLabel()
+    UI.circle(CX + 4, fy0 + 24, 3, eqL and TH.good or TH.mute, 8)
     txt(eqL or "Default animations", CX + 16, fy0 + 24, FS - 2, TH.text, 14)
     txt("Auto-reapply " .. (State.autoReapply and "on" or "off") .. "  -  " .. #State.favs .. " favorites  -  "
         .. #State.presets .. " presets", CX, fy0 + 44, FS - 3, TH.mute, 14)
@@ -1931,12 +1931,12 @@ local function renderWindow()
     txt(wk ~= 0 and ("Hold " .. vkName(wk) .. " for the swap wheel") or "Set a swap wheel key in Controls",
         CX, fy0 + 62, FS - 3, TH.mute, 14)
     local fr, fcy = CX + cw, fy0 + 41
-    button(fr - 112, fcy - 17, 112, 34, "Reapply", "reapply", State.equipped and function() reapply(false) end or nil,
+    UI.button(fr - 112, fcy - 17, 112, 34, "Reapply", "reapply", State.equipped and function() UI.reapply(false) end or nil,
         State.equipped and "primary" or "disabled", 20, "Apply the current animation again")
-    button(fr - 112 - 8 - 84, fcy - 17, 84, 34, "Undo", "undo", State.undo and undoLast or nil,
+    UI.button(fr - 112 - 8 - 84, fcy - 17, 84, 34, "Undo", "undo", State.undo and UI.undoLast or nil,
         State.undo and "soft" or "disabled", 20, "Swap back to the previous animation")
-    local rw = btnW("Restore default")
-    button(fr - 112 - 8 - 84 - 8 - rw, fcy - 17, rw, 34, "Restore default", "restore", restoreDefaults,
+    local rw = UI.btnW("Restore default")
+    UI.button(fr - 112 - 8 - 84 - 8 - rw, fcy - 17, rw, 34, "Restore default", "restore", UI.restoreDefaults,
         "ghost", 20, "Go back to your normal animations")
     rect(W - 26, H - 26, 3, 3, TH.mute, 30, 1, nil, true)
     rect(W - 32, H - 26, 3, 3, TH.mute, 30, 1, nil, true)
@@ -1950,7 +1950,7 @@ local function renderWindow()
         local tx = mid - tw2 / 2
         local dot = (t.kind == "good" and TH.good) or (t.kind == "bad" and TH.bad)
             or (t.kind == "warn" and TH.warn) or TH.text
-        pill(tx, ty, tw2, 34, TH.lineHi, TH.ctl, 50, a)
+        UI.pill(tx, ty, tw2, 34, TH.lineHi, TH.ctl, 50, a)
         rect(tx + 14, ty + 13, 8, 8, dot, 53, 4, a, true)
         txt(t.msg, tx + 30, ty + 17, FS - 1, TH.text, 54, false, false, a)
         ty = ty - 40
@@ -1959,7 +1959,7 @@ local function renderWindow()
         local tw2 = tw(UI.tipText, FS - 2) + 24
         local tx = math.min(Mouse.lx + 12, W - tw2 - 6)
         local tyy = Mouse.ly + 20
-        pill(tx, tyy, tw2, 26, TH.lineHi, TH.ctl, 60)
+        UI.pill(tx, tyy, tw2, 26, TH.lineHi, TH.ctl, 60)
         txt(UI.tipText, tx + 12, tyy + 13, FS - 2, TH.text, 64)
     end
 end
@@ -1971,7 +1971,7 @@ local IDLE_PAINT_INTERVAL = 1 / 24
 local DRAG_INTERVAL = 1 / 120
 local lastDragPaint = 0
 local dragDuration, dragPeak, dragMoves = 0, 0, 0
-local function translateDrawings()
+function UI.translateDrawings()
     if paintedX == nil or paintedY == nil then return false end
     local dx, dy = round(OX - paintedX), round(OY - paintedY)
     if dx == 0 and dy == 0 then return true end
@@ -2019,7 +2019,7 @@ local lastMouseX, lastMouseY = nil, nil
 local lastVisible, lastPage = nil, nil
 local lastFocused, lastWheel = nil, nil
 local renderDuration, renderPeak, renderFrames = 0, 0, 0
-local function render()
+function UI.render()
     local started = os.clock()
     beginFrame()
     UI.prevInputs = UI.inputs
@@ -2037,7 +2037,7 @@ local function render()
     end
     if tid ~= UI.tipId then UI.tipId = tid; UI.tipSince = tick() end
     UI.tipText = tip
-    if UI.visible then renderWindow() end
+    if UI.visible then UI.renderWindow() end
     renderOverlay()
     endFrame()
     paintedX, paintedY = OX, OY
@@ -2055,15 +2055,15 @@ for i = 0, 9 do SHIFT_MAP[0x30 + i] = shiftDigits[i + 1] end
 SHIFT_MAP[0xBD] = "_"; SHIFT_MAP[0xBC] = "<"; SHIFT_MAP[0xBE] = ">"; SHIFT_MAP[0xDE] = '"'
 local typingVK, holdT = nil, 0
 local escHeld, enterHeld = false, false
-local function rbxActive()
+function UI.rbxActive()
     if not isrbxactive then return true end
     local ok, v = pcall(isrbxactive)
     if ok then return v end
     return true
 end
-local function handleKeys(dt)
+function UI.handleKeys(dt)
     if not UI.visible then
-        if UI.focus then blur() end
+        if UI.focus then UI.blur() end
         UI.binding = nil
         typingVK = nil
         return
@@ -2074,13 +2074,13 @@ local function handleKeys(dt)
         if inp.id == UI.focus then e = inp; break end
     end
     if not e then
-        if UI.focusGrace > 0 then UI.focusGrace = UI.focusGrace - 1 else blur() end
+        if UI.focusGrace > 0 then UI.focusGrace = UI.focusGrace - 1 else UI.blur() end
         return
     end
     UI.focusGrace = 0
-    if not rbxActive() then typingVK = nil; return end
+    if not UI.rbxActive() then typingVK = nil; return end
     local esc = iskeypressed(0x1B)
-    if esc and not escHeld then escHeld = true; blur(); return end
+    if esc and not escHeld then escHeld = true; UI.blur(); return end
     escHeld = esc
     local ent = iskeypressed(0x0D)
     if ent and not enterHeld and e.onEnter then pcall(e.onEnter) end
@@ -2129,23 +2129,23 @@ local SKIP_VK = { [0x01] = true, [0x02] = true, [0x03] = true, [0x08] = true, [0
     [0x0E] = true, [0x0F] = true, [0x1B] = true, [0x2E] = true, [0x5B] = true, [0x5C] = true,
     [0x5D] = true, [0x5F] = true }
 local RESERVED_VK = { [0x73] = "F4", [0x24] = "Home" }
-local function captureBind()
+function UI.captureBind()
     local id = UI.binding
-    if not id or not rbxActive() then return end
+    if not id or not UI.rbxActive() then return end
     if iskeypressed(0x1B) then
         UI.binding = nil; UI.bindGuard = tick() + 0.3
-        toast("Binding cancelled", "info")
+        UI.toast("Binding cancelled", "info")
         return
     end
     if iskeypressed(0x08) or iskeypressed(0x2E) then
         State.binds[id] = 0; UI.binding = nil; UI.bindGuard = tick() + 0.3
-        markDirty(); toast("Bind cleared", "info")
+        markDirty(); UI.toast("Bind cleared", "info")
         return
     end
     for vk = 0x04, 0xFE do
         if not SKIP_VK[vk] and iskeypressed(vk) then
             if RESERVED_VK[vk] then
-                toast(RESERVED_VK[vk] .. " is reserved for Stance", "bad")
+                UI.toast(RESERVED_VK[vk] .. " is reserved for Stance", "bad")
                 UI.binding = nil; UI.bindGuard = tick() + 0.3
                 return
             end
@@ -2156,33 +2156,33 @@ local function captureBind()
             keyPrev[vk] = true
             UI.binding = nil; UI.bindGuard = tick() + 0.3
             markDirty()
-            toast("Bound to " .. vkName(vk), "good")
+            UI.toast("Bound to " .. vkName(vk), "good")
             return
         end
     end
 end
 local wheel = { open = false, cx = 0, cy = 0, rings = nil, sel = nil }
-local function presetApplied(pr)
+function UI.presetApplied(pr)
     if State.equipped ~= "mix" or not State.appliedMix then return false end
     for _, slot in ipairs(SLOTS) do
         if State.appliedMix[slot] ~= pr.slots[slot] then return false end
     end
     return true
 end
-local function buildWheel()
+function UI.buildWheel()
     local favs, pres = {}, {}
     for _, id in ipairs(State.favs) do
         local p = PACK_BY_ID[id]
         if p and #favs < 12 then
             favs[#favs + 1] = { name = p.name, kind = "Favorite", on = State.equipped == p.id,
-                fn = function() equipPack(p) end }
+                fn = function() UI.equipPack(p) end }
         end
     end
     for _, pr in ipairs(State.presets) do
         if #pres < 8 then
             local ref = pr
-            pres[#pres + 1] = { name = pr.name, kind = "Preset", on = presetApplied(pr),
-                fn = function() State.mix = copySlots(ref.slots); markDirty(); applyMix() end }
+            pres[#pres + 1] = { name = pr.name, kind = "Preset", on = UI.presetApplied(pr),
+                fn = function() State.mix = UI.copySlots(ref.slots); markDirty(); UI.applyMix() end }
         end
     end
     local useF = State.wheelMode ~= "presets" and #favs > 0
@@ -2191,7 +2191,7 @@ local function buildWheel()
         if #favs > 0 then useF = true elseif #pres > 0 then useP = true end
     end
     if not useF and not useP then
-        toast("Save a favorite or a preset to use the wheel", "info")
+        UI.toast("Save a favorite or a preset to use the wheel", "info")
         return nil
     end
     if useF and useP then
@@ -2201,7 +2201,7 @@ local function buildWheel()
     end
     return { { r0 = 62, r1 = 190, items = pres } }
 end
-local function buildWheelGeom(rings, cx, cy)
+function UI.buildWheelGeom(rings, cx, cy)
     for _, ring in ipairs(rings) do
         local n = #ring.items
         local d = 2 * math.pi / n
@@ -2216,8 +2216,8 @@ local function buildWheelGeom(rings, cx, cy)
         end
     end
 end
-local function wheelOpen()
-    local rings = buildWheel()
+function UI.wheelOpen()
+    local rings = UI.buildWheel()
     if not rings then return end
     local vp = workspace.CurrentCamera.ViewportSize
     local R = rings[#rings].r1
@@ -2225,13 +2225,13 @@ local function wheelOpen()
     wheel.cy = math.clamp(Mouse.y, R + 14, math.max(R + 14, vp.Y - R - 14))
     wheel.rings = rings
     wheel.sel = nil
-    buildWheelGeom(rings, wheel.cx, wheel.cy)
+    UI.buildWheelGeom(rings, wheel.cx, wheel.cy)
     wheel.open = true
     UI.wheelOpen = true
-    syncInput(true)
+    UI.syncInput(true)
 end
 local atan2 = math.atan2 or math.atan
-local function wheelSelect()
+function UI.wheelSelect()
     wheel.sel = nil
     local dx, dy = Mouse.x - wheel.cx, Mouse.y - wheel.cy
     local r = math.sqrt(dx * dx + dy * dy)
@@ -2249,17 +2249,17 @@ local function wheelSelect()
     if idx > n then idx = n end
     wheel.sel = { item = ring.items[idx] }
 end
-local function wheelClose(apply)
+function UI.wheelClose(apply)
     local sel = wheel.sel
     wheel.open = false
     UI.wheelOpen = false
     wheel.rings = nil
     wheel.sel = nil
-    syncInput(true)
+    UI.syncInput(true)
     if apply and sel and sel.item and sel.item.fn then pcall(sel.item.fn) end
 end
-local function processHotkeys()
-    local active = rbxActive()
+function UI.processHotkeys()
+    local active = UI.rbxActive()
     local live = active and UI.focus == nil and UI.binding == nil and tick() >= UI.bindGuard
     local wvk = State.binds.wheel or 0
     if wvk ~= 0 then
@@ -2267,19 +2267,19 @@ local function processHotkeys()
         local edge = down and not keyPrev[wvk]
         keyPrev[wvk] = down
         if wheel.open then
-            if not active then wheelClose(false)
-            elseif not down then wheelClose(true) end
+            if not active then UI.wheelClose(false)
+            elseif not down then UI.wheelClose(true) end
         elseif edge and live then
-            wheelOpen()
+            UI.wheelOpen()
         end
     elseif wheel.open then
-        wheelClose(false)
+        UI.wheelClose(false)
     end
     local actions = {
-        next = function() cycleFavorite(1) end,
-        prev = function() cycleFavorite(-1) end,
-        undo = undoLast,
-        restore = restoreDefaults,
+        next = function() UI.cycleFavorite(1) end,
+        prev = function() UI.cycleFavorite(-1) end,
+        undo = UI.undoLast,
+        restore = UI.restoreDefaults,
     }
     for _, id in ipairs({ "next", "prev", "undo", "restore" }) do
         local vk = State.binds[id] or 0
@@ -2292,7 +2292,7 @@ local function processHotkeys()
     end
 end
 local respawn = { char = nil, pending = false, at = 0, giveUp = 0, nextPoll = 0, tries = 0 }
-local function watchRespawn()
+function UI.watchRespawn()
     local now=tick()
     if now>=respawn.nextPoll then
         respawn.nextPoll=now+0.25
@@ -2303,7 +2303,7 @@ local function watchRespawn()
             respawn.at=now+0.8
             respawn.giveUp=now+22
             respawn.tries=0
-            refreshPlaybackHealth(true)
+            UI.refreshPlaybackHealth(true)
         end
     end
     if not respawn.pending or now<respawn.at then return end
@@ -2333,38 +2333,38 @@ local function watchRespawn()
     end)
     if ok and rig=="R6" then
         respawn.pending=false
-        toast("R6 rig detected after respawn. Select R15 to use Stance animations.", "warn")
+        UI.toast("R6 rig detected after respawn. Select R15 to use Stance animations.", "warn")
         return
     end
     if ok and ready then
         respawn.tries=respawn.tries+1
-        if reapply(true) then
+        if UI.reapply(true) then
             respawn.pending=false
-            refreshPlaybackHealth(true)
-            toast("Animation reapply queued after respawn", "info")
+            UI.refreshPlaybackHealth(true)
+            UI.toast("Animation reapply queued after respawn", "info")
             return
         end
         respawn.at=now+math.min(3,0.85+respawn.tries*0.4)
     end
     if now>=respawn.giveUp then
         respawn.pending=false
-        toast("Respawn animation objects not ready; use Reapply when R15 loads", "warn")
+        UI.toast("Respawn animation objects not ready; use Reapply when R15 loads", "warn")
     end
 end
-local function drawWheel()
-    wheelSelect()
+function UI.drawWheel()
+    UI.wheelSelect()
     local cx, cy = wheel.cx, wheel.cy
     local rings = wheel.rings
     local R = rings[#rings].r1
     local op = 1 / State.opacity
-    circle(cx, cy, R + 7, TH.line, 98, op)
-    circle(cx, cy, R + 6, TH.bg, 99, op)
+    UI.circle(cx, cy, R + 7, TH.line, 98, op)
+    UI.circle(cx, cy, R + 6, TH.bg, 99, op)
     for j = #rings, 1, -1 do
         local ring = rings[j]
         local z = 100 + (#rings - j) * 2
         local fill = j == #rings and TH.ctl or TH.ctlHi
-        circle(cx, cy, ring.r1, fill, z, op)
-        circle(cx, cy, ring.r0, TH.bg, z + 1, op)
+        UI.circle(cx, cy, ring.r1, fill, z, op)
+        UI.circle(cx, cy, ring.r0, TH.bg, z + 1, op)
     end
     for _, ring in ipairs(rings) do
         local d = ring.step or (2 * math.pi / math.max(1, #ring.items))
@@ -2394,8 +2394,8 @@ local function drawWheel()
             end
         end
     end
-    circle(cx, cy, 47, TH.line, 110, op)
-    circle(cx, cy, 46, TH.bg, 111, op)
+    UI.circle(cx, cy, 47, TH.line, 110, op)
+    UI.circle(cx, cy, 46, TH.bg, 111, op)
     if sel then
         txt(fit(sel.item.name, 86, FS - 1), cx, cy - 7,
             FS - 1, TH.text, 112, true, true, op)
@@ -2408,7 +2408,7 @@ end
 function renderOverlay()
     local sS, sX, sY = S, OX, OY
     S, OX, OY = 1, 0, 0
-    if wheel.open then drawWheel() end
+    if wheel.open then UI.drawWheel() end
     if not UI.visible and #UI.toasts > 0 then
         local vp = workspace.CurrentCamera.ViewportSize
         local ty = 28
@@ -2419,7 +2419,7 @@ function renderOverlay()
             local tx = (vp.X - tw2) / 2
             local dot = (t.kind == "good" and TH.good) or (t.kind == "bad" and TH.bad)
                 or (t.kind == "warn" and TH.warn) or TH.accent
-            pill(tx, ty, tw2, 34, TH.lineHi, TH.ctl, 50, a)
+            UI.pill(tx, ty, tw2, 34, TH.lineHi, TH.ctl, 50, a)
             rect(tx + 14, ty + 13, 8, 8, dot, 53, 4, a, true)
             txt(t.msg, tx + 28, ty + 17, FS - 1, TH.text, 54, false, false, a)
             ty = ty + 40
@@ -2438,12 +2438,12 @@ local Scheduler = {
     taskWait = 1 / 240,
 }
 local lastErr = nil
-local function step(dt)
+function UI.step(dt)
     local stepStart = os.clock()
     FS = State.textSize
     S = State.scale
     local vp = workspace.CurrentCamera.ViewportSize
-    refreshPlaybackHealth(false)
+    UI.refreshPlaybackHealth(false)
     UI.W0, UI.W, UI.H = State.w, State.w, State.h
     OX, OY = State.x, State.y
     local m = LocalPlayer:GetMouse()
@@ -2453,10 +2453,10 @@ local function step(dt)
     Mouse.clicked = dn and not prevDown
     Mouse.down = dn
     prevDown = dn
-    local f4 = rbxActive() and iskeypressed(0x73)
+    local f4 = UI.rbxActive() and iskeypressed(0x73)
     if f4 and not f4Held then UI.visible = not UI.visible end
     f4Held = f4
-    local hm = rbxActive() and iskeypressed(0x24)
+    local hm = UI.rbxActive() and iskeypressed(0x24)
     if hm and not homeHeld and UI.visible then
         local vp = workspace.CurrentCamera.ViewportSize
         State.x = math.floor((vp.X - UI.W * S) / 2)
@@ -2469,10 +2469,10 @@ local function step(dt)
         if UI.toasts[i].life <= 0 then table.remove(UI.toasts, i) end
     end
     if UI.delConfirm and tick() > UI.delConfirm.t then UI.delConfirm = nil end
-    if UI.binding then captureBind() end
-    watchRespawn()
-    processHotkeys()
-    handleKeys(dt)
+    if UI.binding then UI.captureBind() end
+    UI.watchRespawn()
+    UI.processHotkeys()
+    UI.handleKeys(dt)
     if UI.dragging and Mouse.down then
         State.x = math.clamp(Mouse.x - UI.dx, -State.w * S + 120, vp.X - 120)
         State.y = math.clamp(Mouse.y - UI.dy, 0, vp.Y - 60)
@@ -2490,7 +2490,7 @@ local function step(dt)
     local draggingLive = UI.visible and UI.dragging and Mouse.down and not wheel.open
     if draggingLive then
         if moving and paintNow - lastDragPaint >= DRAG_INTERVAL then
-            if not translateDrawings() then render() end
+            if not UI.translateDrawings() then UI.render() end
             lastDragPaint = paintNow
         end
     else
@@ -2500,7 +2500,7 @@ local function step(dt)
             or UI.visible ~= lastVisible or UI.page ~= lastPage
             or UI.focus ~= lastFocused or wheel.open ~= lastWheel
             or paintNow - lastPaint >= interval
-        if paintDue then render() end
+        if paintDue then UI.render() end
     end
     lastMouseX, lastMouseY = Mouse.x, Mouse.y
     lastVisible, lastPage = UI.visible, UI.page
@@ -2514,10 +2514,10 @@ local function step(dt)
             end
         end
         if hitB then
-            if not hitB.isInput and UI.focus then blur() end
+            if not hitB.isInput and UI.focus then UI.blur() end
             if hitB.fn then pcall(hitB.fn) end
         else
-            if UI.focus then blur() end
+            if UI.focus then UI.blur() end
             local lx, ly = Mouse.lx, Mouse.ly
             if lx >= UI.W - 22 and lx <= UI.W and ly >= UI.H - 22 and ly <= UI.H then
                 UI.resizing = true
@@ -2538,7 +2538,7 @@ local function step(dt)
             UI.resizing = false; markDirty()
         end
     end
-    syncInput()
+    UI.syncInput()
     flushSave()
     stepMs = (os.clock() - stepStart) * 1000
     stepPeakMs = math.max(stepPeakMs * 0.98, stepMs)
@@ -2600,7 +2600,7 @@ _G.StanceUnload = function()
     inputSent = true
     inputBlocked = false
     UI.wheelOpen = false
-    casSet(false)
+    UI.casSet(false)
     _G.StanceDevStats = nil
     if type(_G.StanceEngineUnload) == "function" then pcall(_G.StanceEngineUnload) end
     if type(_G.StanceEmoteEngineUnload) == "function" then pcall(_G.StanceEmoteEngineUnload) end
@@ -2637,10 +2637,10 @@ function Scheduler.tick(name)
     if Scheduler.active ~= name or now - Scheduler.lastStep < 1 / 120 then return end
     local dt = math.min(now - Scheduler.lastStep, 0.25)
     Scheduler.lastStep = now
-    local ok, err = pcall(step, dt)
+    local ok, err = pcall(UI.step, dt)
     if not ok and err ~= lastErr then
         lastErr = err
-        toast("Stance UI error: " .. tostring(err), "bad")
+        UI.toast("Stance UI error: " .. tostring(err), "bad")
     end
 end
 function Scheduler.connect(name, signal)
@@ -2660,9 +2660,9 @@ end)
 if engine and type(engine.Status) == "function" then
     local ok, status = pcall(engine.Status)
     if ok and type(status) == "table" and status.available == false then
-        toast("Playback unavailable: " .. tostring(status.reason), "bad")
+        UI.toast("Playback unavailable: " .. tostring(status.reason), "bad")
     end
 end
-if catalogError then toast(catalogError, "bad")
-elseif engineError then toast("Animation engine unavailable: " .. engineError, "bad")
-else toast("Stance loaded: " .. tostring(#PACKS) .. " animation packs", "good") end
+if catalogError then UI.toast(catalogError, "bad")
+elseif engineError then UI.toast("Animation engine unavailable: " .. engineError, "bad")
+else UI.toast("Stance loaded: " .. tostring(#PACKS) .. " animation packs", "good") end
