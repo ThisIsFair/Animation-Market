@@ -1832,7 +1832,7 @@ local function stanceCopy(selection)
     end
     return result
 end
-local function stanceRestoreTracked()
+local function stanceRestoreTracked(skipRefresh)
     local previous = stanceCopy(activeSpoofs)
     activeSpoofs = {}
     activeWriteStamp = {}
@@ -1862,7 +1862,7 @@ local function stanceRestoreTracked()
     if failures > 0 then
         return false, "Failed to restore " .. tostring(failures) .. " animation references"
     end
-    if restored > 0 then
+    if restored > 0 and not skipRefresh then
         local hum = character and character:FindFirstChild("Humanoid")
         if hum and PLATFORMSTAND_OFFSET then
             task.spawn(function()
@@ -1922,6 +1922,38 @@ StanceEngine.ApplyRows = function(rows)
 end
 StanceEngine.Restore = function()
     return stanceRestoreTracked()
+end
+-- One-shot emote experiment: restore reference strings without restarting
+-- the currently playing idle track. Default Restore behavior stays intact.
+StanceEngine.RestoreNoRefresh = function()
+    if applyBusy then return false, "Animation writes are in progress; retry shortly" end
+    return stanceRestoreTracked(true)
+end
+-- Request the same guarded PlatformStand refresh used by the Dev engine.
+-- Only call on deliberate emote cancel/movement, NOT during emote playback.
+StanceEngine.RefreshOneShot = function()
+    if applyBusy then return false, "Animation writes are in progress" end
+    local can, why = capability()
+    if not can then return false, why end
+    local player = game:GetService("Players").LocalPlayer
+    local character = player and player.Character
+    local hum = character and character:FindFirstChild("Humanoid")
+    if not hum or type(hum.Address) ~= "number" or not PLATFORMSTAND_OFFSET then
+        return false, "Humanoid/PlatformStand unavailable"
+    end
+    local address = hum.Address + PLATFORMSTAND_OFFSET
+    local ok, reason = pcall(function()
+        local original = memory_read("byte", address)
+        assert(original == 0 or original == 1, "PlatformStand value failed validation")
+        if original == 0 then
+            memory_write("byte", address, 1)
+            task.wait(0.12)
+            memory_write("byte", address, original)
+            assert(memory_read("byte", address) == original, "PlatformStand restore verification failed")
+        end
+    end)
+    if not ok then return false, tostring(reason) end
+    return true, "Animation refresh pulse completed"
 end
 StanceEngine.Library = function()
     return market.ordered
