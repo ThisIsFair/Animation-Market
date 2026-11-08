@@ -20,7 +20,7 @@
 -- No /e, Matcha Pro, script deobfuscation, or teleportation is involved.
 -- A client-local reset does not prove the peer's track stopped.
 
-local VERSION = "20261107-quickpulse-2"
+local VERSION = "20261107-quickpulse-3-stopguard"
 local TAG = "[StanceEmotesTEST] "
 local ENGINE_URL =
     "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Animation_Engine.lua?emotest=quickpulse-67a312"
@@ -48,6 +48,8 @@ local s = {
     mode="pulse", before=0.03, after=0.025,
     startAt=0, stageAt=0, armedAt=0, last="Not started",
     cancelAt=0, expiry=35, retryAfter=0,
+    cancelHold=0.85, walkSince=nil, walkDropCount=0,
+    lastStopMethod="Not attempted", nativeStopCount=0,
     sawMotion=false, lastReadback="0/0",
 }
 
@@ -135,6 +137,45 @@ local function isMoving(char)
         end
     end
     return false,"no movement"
+end
+
+-- Matcha may not expose Animator or AnimationTrack methods. Never stop
+-- unrelated movement tracks: match only the active requested clip ID.
+-- This is the documented Roblox track-stop path if the VM exposes it.
+local function stopMatchingTrack()
+    local char=currentChar()
+    local humanoid=char and char:FindFirstChild("Humanoid")
+    local animator=humanoid and humanoid:FindFirstChild("Animator")
+    if not animator then return false,"Animator unavailable" end
+    local available,method=pcall(function() return animator.GetPlayingAnimationTracks end)
+    if not available or type(method)~="function" then
+        return false,"Matcha does not expose Animator:GetPlayingAnimationTracks"
+    end
+    local got,tracks=pcall(function() return animator:GetPlayingAnimationTracks() end)
+    if not got or type(tracks)~="table" then
+        return false,"Animator track listing unavailable"
+    end
+    local stopped=0
+    for _,track in ipairs(tracks) do
+        local read,id=pcall(function()
+            local anim=track.Animation
+            return anim and anim.AnimationId
+        end)
+        if read and type(id)=="string" then
+            local digits=id:match("rbxassetid://(%d+)")
+                or id:match("[?&]id=(%d+)")
+                or id:match("^(%d+)$")
+            if digits==s.clip then
+                local ok=pcall(function() track:Stop(0.12) end)
+                if ok then stopped=stopped+1 end
+            end
+        end
+    end
+    if stopped>0 then
+        s.nativeStopCount=s.nativeStopCount+stopped
+        return true,"Stop() invoked on "..tostring(stopped).." matching track(s)"
+    end
+    return false,"No accessible playing track matched clip "..tostring(s.clip)
 end
 
 local function readbackReady()
@@ -246,12 +287,29 @@ local function run(token)
                 s.sawMotion=true
                 s.phase="walking-cancel"
                 s.cancelAt=tick()
-                log("Actual movement detected; allowing normal Animate track transition.")
-                log("Keep walking for about 1.5 seconds while IDs remain unchanged.")
+                s.walkSince=tick()
+                local native,detail=stopMatchingTrack()
+                s.lastStopMethod=detail
+                if native then
+                    log("Explicit Roblox AnimationTrack stop: "..tostring(detail))
+                    log("Other-client stop is still UNVERIFIED.")
+                    cleanup("native track stop during movement")
+                    return
+                end
+                log("Movement detected; no direct track stop available ("..tostring(detail)..").")
+                log("Keep walking continuously for "..tostring(s.cancelHold)
+                    .."s before the original idle IDs are restored.")
             end
         elseif s.phase=="walking-cancel" then
-            if tick()-s.cancelAt>=1.5 then
-                cleanup("walking stop")
+            if not moving then
+                s.walkDropCount=s.walkDropCount+1
+                s.phase="await-stop"
+                s.walkSince=nil
+                log("Walking ended before sustained stop confirmation. Original ID remains staged.")
+                log("Walk again for "..tostring(s.cancelHold).."s continuously or use .Restore().")
+            elseif s.walkSince and tick()-s.walkSince>=s.cancelHold then
+                log("Sustained movement confirmed before restoring original IDs.")
+                cleanup("confirmed sustained walking stop")
                 return
             end
         else
@@ -298,6 +356,8 @@ function P.Play(value)
     s.active=true;s.phase="await-walk";s.clip=id;s.char=char
     s.token=s.token+1;s.startAt=tick();s.last="Starting emote"
     s.sawMotion=false;s.lastReadback="0/0"
+    s.walkSince=nil;s.walkDropCount=0;s.nativeStopCount=0
+    s.lastStopMethod="Not attempted"
     local token=s.token
     if s.mode=="pulse" then
         local ok,detail=invoke(function()
@@ -329,9 +389,17 @@ function P.Stop()
     if s.phase=="playing" or s.phase=="await-stop" then
         s.phase="await-stop"
         s.last="Stop requested; waiting for genuine movement"
-        log("Please walk briefly (~1.5 seconds) to cancel on other clients.")
-        log("The short PlatformStand pulse alone is not a confirmed remote-track stop.")
-        return true,"Awaiting actual walking; no fake stop reported"
+        local native,detail=stopMatchingTrack()
+        s.lastStopMethod=detail
+        if native then
+            log("Explicit Roblox AnimationTrack stop requested: "..tostring(detail))
+            log("Other-client visual confirmation still required.")
+            return cleanup("explicit native track stop")
+        end
+        log("No native stop available: "..tostring(detail))
+        log("Walk continuously for "..tostring(s.cancelHold).."s to request a normal stop.")
+        log("No local memory readback can confirm a remote AnimationTrack has ended.")
+        return true,"Awaiting sustained walking; not claiming remote stop"
     end
     return cleanup("cancelled before playback")
 end
@@ -351,6 +419,17 @@ function P.SetMode(mode)
     log("Start mode set to "..mode)
     return true,mode
 end
+function P.SetCancelHold(seconds)
+    if s.active then return deny("Restore the active test first") end
+    local value=tonumber(seconds)
+    if not value or value<0.4 or value>2.5 then
+        return deny("Stop-confirmation hold must be between 0.4 and 2.5 seconds")
+    end
+    s.cancelHold=value
+    log("Continuous walk required for stop: "..tostring(value).."s")
+    return true,value
+end
+
 function P.SetPulse(beforeSeconds,afterSeconds)
     if s.active then return deny("Restore the active test first") end
     local a,b=tonumber(beforeSeconds),tonumber(afterSeconds)
@@ -369,6 +448,10 @@ function P.Check()
         .."+"..tostring(s.after).." seconds")
     log("Last="..tostring(s.last).."; memory readback="..tostring(s.lastReadback)
         .."; walking observed="..tostring(s.sawMotion))
+    log("Stop method="..tostring(s.lastStopMethod)
+        .."; matching native tracks stopped="..tostring(s.nativeStopCount)
+        .."; interrupted walk attempts="..tostring(s.walkDropCount)
+        .."; required walk="..tostring(s.cancelHold).."s")
     if engineReady(s.engine) then
         local r=status(s.engine)
         if r then log("Engine requested="..tostring(r.requestedStates)
