@@ -23,6 +23,18 @@ Standard Roblox emotes normally cancel when the character starts moving. Stance 
 - This change is **Dev-only**, and `main` is untouched.
 - If the new adapter fails to load, Stance's other pages still function.
 
+## Cute Wave asset-ID test (2026-11-07)
+
+The Dev **Emotes** workspace now opens on a **Test ID** tab containing the user-supplied Cute Wave asset `85402831040149` (editable). Press **Play test** in an R15 experience and then use F4 to reopen the overlay; use **Stop** to halt Stance's custom track. The original **Standard** tab remains available.
+
+The `Stance_Emote_Engine.lua` adapter attempts `Animator:GetTrackByAnimationId("rbxassetid://85402831040149")` first. If not already loaded, it finds a preexisting `Animation` instance inside the character, tries to `Clone()` it (no `Instance.new`), changes the clone's `AnimationId` and attempts `Animator:LoadAnimation(clone)`, then `AnimationTrack:Play()`. Where available it sets Action priority, watches R15 movement/jumping/respawn to stop the track, and provides a manual Stop button.
+
+Each unsupported or rejected stage returns a visible diagnostic. A successful method call **does not guarantee visible playback**; the asset might be a marketplace Emote item containing a different animation clip ID, or Roblox may reject it on permissions. The asset's underlying content type was not independently verified because the Creator Store page could not be retrieved.
+
+The ID test does not use keyboard emote commands, manipulate Roblox memory, or alter the avatar description. The separate existing movement-pack spoofing code is left unchanged. `Emotes.Stop` stops only tracks started by Stance's test, not normal Roblox emotes.
+
+Live Matcha execution, successful player-visible playback, stop-on-movement behavior and replication **still require testing**. This is not production-ready.
+
 ## What is **not** implemented yet
 
 An actual catalog of arbitrary Roblox Marketplace emotes and unrestricted playback by animation asset ID are **not** part of this prototype. Roblox's usual way to register additional emote IDs involves `HumanoidDescription:SetEmotes` and `SetEquippedEmotes`, while another path is `Animator:LoadAnimation`. Those capabilities are not documented for Matcha, and Roblox may enforce ownership and permission rules. We will need live tests or documented Matcha support before an asset-ID emote marketplace can be advertised as functional.
