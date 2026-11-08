@@ -1170,8 +1170,14 @@ local autoReapplyEnabled = true
 -- Optional emote-test staging. Regular Stance animation writes still use
 -- the original PlatformStand refresh unless explicitly queued as quiet.
 local emoteQuietWriteMode = false
+-- Temporary one-shot quick-pulse profile for StanceEmotesTEST only.
+-- Regular pack/mix writes retain the original 0.16+0.08 second timing.
+local emoteQuickPulseTiming = nil
 local function applyActiveAnimations(explicit)
     if applyBusy or not next(activeSpoofs) then return end
+    -- A quick-pulse emote must never repeat a forced PlatformStand refresh
+    -- on the engine's periodic auto-reapply loop.
+    if not explicit and emoteQuickPulseTiming then return end
     if not explicit and not autoReapplyEnabled and appliedCharacterAddress then
         local ok,address=pcall(function()
             local player=game:GetService("Players").LocalPlayer
@@ -1236,7 +1242,7 @@ local function applyActiveAnimations(explicit)
         if originalPS==0 and not emoteQuietWriteMode then
             memory_write("byte",hum.Address+PLATFORMSTAND_OFFSET,1)
             pulseStarted=true
-            task.wait(0.16)
+            task.wait(emoteQuickPulseTiming and emoteQuickPulseTiming.before or 0.16)
         end
         for _,item in ipairs(pending) do
             local worked,mode=tryReferenceMemoryWrite(item.anim,item.id)
@@ -1259,7 +1265,9 @@ local function applyActiveAnimations(explicit)
             playbackStats.recentResults[#playbackStats.recentResults+1]=resultLine
             if #playbackStats.recentResults>15 then table.remove(playbackStats.recentResults,1) end
         end
-        if pulseStarted then task.wait(0.08) end
+        if pulseStarted then
+            task.wait(emoteQuickPulseTiming and emoteQuickPulseTiming.after or 0.08)
+        end
     end)
 
     if pulseStarted and originalPS~=nil then
@@ -1838,8 +1846,10 @@ end
 local function stanceRestoreTracked(skipRefresh)
     local previous = stanceCopy(activeSpoofs)
     local previousQuiet = emoteQuietWriteMode
+    local previousQuick = emoteQuickPulseTiming
     activeSpoofs = {}
     emoteQuietWriteMode = false
+    emoteQuickPulseTiming = nil
     activeWriteStamp = {}
     retryAfter = {}
     retryCounts = {}
@@ -1847,6 +1857,7 @@ local function stanceRestoreTracked(skipRefresh)
     if not can then
         activeSpoofs = previous
         emoteQuietWriteMode = previousQuiet
+        emoteQuickPulseTiming = previousQuick
         return false, reason
     end
     local player = game:GetService("Players").LocalPlayer
@@ -1883,7 +1894,7 @@ local function stanceRestoreTracked(skipRefresh)
     end
     return true, "Restored " .. tostring(restored) .. " animation references"
 end
-local function stanceApplyIds(idsByState, quietWrite)
+local function stanceApplyIds(idsByState, quietWrite, quickTiming)
     local can, reason = capability()
     if not can then return false, reason end
     if type(idsByState) ~= "table" then return false, "No animation state map supplied" end
@@ -1915,6 +1926,7 @@ local function stanceApplyIds(idsByState, quietWrite)
     end
     activeSpoofs = staged
     emoteQuietWriteMode = quietWrite == true
+    emoteQuickPulseTiming = quickTiming
     activeWriteStamp = {}
     retryAfter = {}
     retryCounts = {}
@@ -1928,6 +1940,17 @@ end
 -- so a natural movement-to-idle transition must load the animation.
 StanceEngine.StageQuietIds = function(ids)
     return stanceApplyIds(ids, true)
+end
+-- A faster version of the existing guarded pulse, for an experimental emote
+-- trigger only. Not a teleport, state bypass, or guaranteed playback call.
+-- Clamped durations avoid invisible zero-time writes and long ragdoll holds.
+StanceEngine.StageQuickPulseIds = function(ids, beforeSeconds, afterSeconds)
+    local before = tonumber(beforeSeconds) or 0.03
+    local after = tonumber(afterSeconds) or 0.025
+    if before < 0.02 or before > 0.12 or after < 0.02 or after > 0.12 then
+        return false, "Pulse durations must be between 0.02 and 0.12 seconds"
+    end
+    return stanceApplyIds(ids, false, {before = before, after = after})
 end
 StanceEngine.ApplyRows = function(rows)
     return stanceApplyIds(MarketCore.group(rows))
@@ -1946,6 +1969,7 @@ end
 StanceEngine.AbandonOneShotOnRespawn = function()
     activeSpoofs = {}
     emoteQuietWriteMode = false
+    emoteQuickPulseTiming = nil
     activeWriteStamp = {}
     retryAfter = {}
     retryCounts = {}
