@@ -163,6 +163,13 @@ function Emotes.PlayId(value)
             lastError="Matcha cannot set AnimationId on the cloned animation"
             return false,lastError
         end
+        local readOK,readId=pcall(function() return clip.AnimationId end)
+        if not readOK or tostring(readId):match("(%d+)")~=id then
+            dropClip(clip)
+            running=false
+            lastError="Cloned AnimationId did not retain the requested ID; playback blocked to protect current animations"
+            return false,lastError
+        end
         local loaded,loadedTrack=pcall(function() return animator:LoadAnimation(clip) end)
         if not loaded or not loadedTrack then
             dropClip(clip)
