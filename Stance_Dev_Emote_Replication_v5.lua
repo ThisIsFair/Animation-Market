@@ -18,14 +18,14 @@
 -- _G.StanceEmoteV5.Report()
 -- _G.StanceEmoteV5.Arm("118644064755644")
 -- Follow console: start WALKING; keep walking until "ARMED"; then STOP to play.
--- Walk again to test second-client cancellation. KEEP walking.
--- While still walking, call _G.StanceEmoteV5.Finish() to restore idle.
+-- Walk again to test second-client cancellation. KEEP walking ~4 seconds.
+-- V5 then auto-restores IDs (or call .Finish() for manual cleanup).
 -- _G.StanceEmoteV5.Check()
 -- _G.StanceEmoteV5.Unload()
 --
--- IMPORTANT: Leaving the replacement armed and returning to idle can replay
--- the emote. That's intentional for isolating a replication problem; Finish()
--- removes the replacement, preferably while walking.
+-- IMPORTANT: If you stop walking before the automatic restore,
+-- the emote can replay. Keep moving for 4 seconds after the initial
+-- cancellation attempt. Finish() removes the replacement manually.
 -- No /e, no deobfuscation, no Matcha Pro, no additional network requests.
 
 local VERSION = "v5-quiet-stage-remote-stop-20261107"
@@ -62,7 +62,7 @@ local s = {
     char=nil,engine=nil,ownsEngine=false,initAttempted=false,initError=nil,
     createdAt=0,armAt=0,startedAt=0,stopAt=0,
     stableFrames=0,confirmedWalking=false,localMotion="unavailable",
-    last="Not started",duration=45,missingFrames=0,
+    last="Not started",duration=45,missingFrames=0,autoFinishSeconds=4,
 }
 local function ready(e)
     return type(e)=="table"
@@ -264,8 +264,14 @@ local function loop(token)
                 if not logOnce and tick()-s.stopAt>2 then
                     logOnce=true
                     log("2+ seconds of walking without restoring AnimationId.")
-                    log("If the other client still sees emote, the cause is NOT early ID restoration alone.")
-                    log("Run .Finish() while walking to prevent idle repeat.")
+                    log("CHECK OTHER CLIENT NOW. If it still sees the emote, early ID restoration alone is NOT the cause.")
+                    log("Keep walking until auto-restore, or call .Finish() manually.")
+                end
+                if tick()-s.stopAt>=s.autoFinishSeconds then
+                    log("Auto-finish after "..tostring(s.autoFinishSeconds).." seconds of walking.")
+                    log("Restoring idle IDs NOW; observe whether the remote emote had already stopped.")
+                    endSession("automatic walking cleanup")
+                    break
                 end
             else
                 if not waitingStart then waitingStart=tick() end
@@ -326,6 +332,7 @@ function P.Arm(value,timeoutSeconds)
     s.last="Waiting for real character movement, no memory writes yet"
     log("ARM REQUESTED: clip "..id.." - begin WALKING now (WASD or controller).")
     log("No memory writes will happen until physical motion is confirmed.")
+    log("After emote starts, walk again for "..tostring(s.autoFinishSeconds).." seconds; IDs then auto-restore.")
     local token=s.token
     task.spawn(function()
         local ok,problem=pcall(function() loop(token) end)
@@ -358,6 +365,17 @@ end
 function P.Stop()
     s.token=s.token+1
     return endSession("manual emergency Stop")
+end
+
+function P.SetAutoFinish(seconds)
+    if s.live then return fail("Stop current test before changing auto-finish") end
+    local amount=tonumber(seconds)
+    if not amount or amount<3 or amount>12 then
+        return fail("Choose auto-finish between 3 and 12 seconds")
+    end
+    s.autoFinishSeconds=amount
+    log("Auto-finish after "..tostring(amount).." seconds of confirmed walking.")
+    return true,amount
 end
 
 function P.Check()
