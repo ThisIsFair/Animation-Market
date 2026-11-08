@@ -474,21 +474,23 @@ end
 if engine and type(engine.SetAutoReapply)=="function" then
     pcall(engine.SetAutoReapply,State.autoReapply)
 end
+do
 local EMOTE_ENGINE_URL = "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Emote_Engine.lua"
-local emoteEngine,emoteEngineError=nil,nil
+UI.emoteEngine,UI.emoteEngineError=nil,nil
 if type(_G.StanceEmoteEngineUnload)=="function" then pcall(_G.StanceEmoteEngineUnload) end
 if type(httpget)=="function" and type(loadstring)=="function" then
     local ok,err=pcall(function()
         local src=httpget(EMOTE_ENGINE_URL)
         assert(type(src)=="string" and #src>1000,"Emote adapter download failed")
         loadstring(src)()
-        emoteEngine=_G.StanceEmoteEngine
-        assert(type(emoteEngine)=="table" and type(emoteEngine.Play)=="function",
+        UI.emoteEngine=_G.StanceEmoteEngine
+        assert(type(UI.emoteEngine)=="table" and type(UI.emoteEngine.Play)=="function",
             "Emote adapter did not initialize")
     end)
-    if not ok then emoteEngineError=tostring(err) end
+    if not ok then UI.emoteEngineError=tostring(err) end
 else
-    emoteEngineError="Matcha HTTP/loadstring is unavailable"
+    UI.emoteEngineError="Matcha HTTP/loadstring is unavailable"
+end
 end
 local PlaybackHealth = {report=nil,nextAt=0,rig="Loading",lastWarnChar=nil}
 local function refreshPlaybackHealth(force)
@@ -1572,6 +1574,7 @@ local function renderAppearance(x, y, w, h)
         buildTheme(); markDirty(); toast("Appearance reset", "info")
     end, "danger", 20)
 end
+do
 local EMOTE_DEFAULTS = {
     {"wave","Wave","Quick greeting"},
     {"point","Point","Point something out"},
@@ -1582,10 +1585,10 @@ local EMOTE_DEFAULTS = {
     {"dance3","Dance 3","Third classic dance"},
 }
 local function copyEmoteCommand(name)
-    if not emoteEngine or type(emoteEngine.Command)~="function" then
+    if not UI.emoteEngine or type(UI.emoteEngine.Command)~="function" then
         toast("Emote adapter unavailable","bad");return
     end
-    local command,reason=emoteEngine.Command(name)
+    local command,reason=UI.emoteEngine.Command(name)
     if not command then toast(reason or "Unknown emote","bad");return end
     local ok=pcall(function() setclipboard(command) end)
     toast(ok and ("Copied "..command.." to clipboard") or "Clipboard copy unavailable",ok and "good" or "bad")
@@ -1600,8 +1603,8 @@ local function toggleEmoteFavorite(name)
 end
 local function playStanceEmote(name)
     if UI.emoteBusy then return end
-    if not emoteEngine or type(emoteEngine.Play)~="function" then
-        toast("Emote adapter unavailable: "..tostring(emoteEngineError),"bad")
+    if not UI.emoteEngine or type(UI.emoteEngine.Play)~="function" then
+        toast("Emote adapter unavailable: "..tostring(UI.emoteEngineError),"bad")
         return
     end
     UI.emoteBusy=true
@@ -1614,7 +1617,7 @@ local function playStanceEmote(name)
     end
     task.spawn(function()
         if allowKeyboard then task.wait(0.16) end
-        local ok,success,detail=pcall(emoteEngine.Play,name,allowKeyboard)
+        local ok,success,detail=pcall(UI.emoteEngine.Play,name,allowKeyboard)
         UI.emoteBusy=false
         if not ok or not success then
             if wasVisible and allowKeyboard then UI.visible=true end
@@ -1630,7 +1633,7 @@ local function playStanceEmote(name)
 end
 local function tryEmoteId()
     if UI.emoteBusy then return end
-    if not emoteEngine or type(emoteEngine.PlayId)~="function" then
+    if not UI.emoteEngine or type(UI.emoteEngine.PlayId)~="function" then
         UI.emoteTestResult="Emote module missing PlayId; reload StanceDev."
         toast(UI.emoteTestResult,"bad")
         return
@@ -1638,7 +1641,7 @@ local function tryEmoteId()
     UI.emoteBusy=true
     local requested=UI.emoteTestId
     task.spawn(function()
-        local ok,success,detail=pcall(emoteEngine.PlayId,requested)
+        local ok,success,detail=pcall(UI.emoteEngine.PlayId,requested)
         UI.emoteBusy=false
         UI.emoteTestResult=tostring(ok and detail or success)
         if ok and success then
@@ -1651,8 +1654,8 @@ local function tryEmoteId()
     end)
 end
 local function stopEmoteId()
-    if emoteEngine and type(emoteEngine.Stop)=="function" then
-        local ok,stopped,reason=pcall(emoteEngine.Stop)
+    if UI.emoteEngine and type(UI.emoteEngine.Stop)=="function" then
+        local ok,stopped,reason=pcall(UI.emoteEngine.Stop)
         UI.emoteTestResult=tostring(ok and reason or stopped)
         toast(UI.emoteTestResult,"info")
     else
@@ -1660,7 +1663,7 @@ local function stopEmoteId()
         toast(UI.emoteTestResult,"warn")
     end
 end
-local function renderEmotes(x,y,w,h)
+UI.renderEmotes = function(x,y,w,h)
     txt("ROBLOX EMOTES - DEV",x+2,y+16,FS-1,TH.text,14,false,true)
     segmented(x+w-224,y,224,30,{{"test","Test ID"},{"standard","Standard"}},
         UI.emoteView,function(v) UI.emoteView=v;blur() end,20,"emoteView")
@@ -1680,8 +1683,8 @@ local function renderEmotes(x,y,w,h)
             "Stop only the custom Stance emote track")
         txt("TEST STATUS",x+18,ty+186,FS-3,TH.sub,15,false,true)
         local reported=UI.emoteTestResult
-        if emoteEngine and type(emoteEngine.Status)=="function" then
-            local ok,info=pcall(emoteEngine.Status)
+        if UI.emoteEngine and type(UI.emoteEngine.Status)=="function" then
+            local ok,info=pcall(UI.emoteEngine.Status)
             if ok and type(info)=="table" and info.lastAssetId then
                 if info.active then
                     reported="Track requested: "..tostring(info.lastAssetId).." (visual playback unverified)"
@@ -1745,6 +1748,7 @@ local function renderEmotes(x,y,w,h)
         emptyState(x,y+118,w,h-118,"No emotes found",
             UI.emoteFilter=="saved" and "Save one from All to see it here." or "Try another search.")
     end
+end
 end
 local PAGES = {
     { "Home", "Home" }, { "Browse", "Browse" }, { "Favorites", "Favorites" }, { "MixMatch", "Mix" },
@@ -1898,7 +1902,7 @@ local function renderWindow()
     elseif UI.page == "Favorites"  then renderPackList(CX, CT, cw, ch, "f")
     elseif UI.page == "MixMatch"   then renderMix(CX, CT, cw, ch)
     elseif UI.page == "Presets"    then renderPresets(CX, CT, cw, ch)
-    elseif UI.page == "Emotes"     then renderEmotes(CX, CT, cw, ch)
+    elseif UI.page == "Emotes"     then UI.renderEmotes(CX, CT, cw, ch)
     elseif UI.page == "Controls"   then renderControls(CX, CT, cw, ch)
     elseif UI.page == "Appearance" then renderAppearance(CX, CT, cw, ch)
     end
