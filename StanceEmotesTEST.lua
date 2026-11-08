@@ -48,7 +48,7 @@ local s = {
     mode="pulse", before=0.03, after=0.025,
     startAt=0, stageAt=0, armedAt=0, last="Not started",
     cancelAt=0, expiry=35, retryAfter=0,
-    cancelHold=0.85, walkSince=nil, walkDropCount=0,
+    cancelHold=0.85, walkSince=nil, lastMovingAt=nil, walkDropCount=0,
     lastStopMethod="Not attempted", nativeStopCount=0,
     sawMotion=false, lastReadback="0/0",
 }
@@ -288,6 +288,7 @@ local function run(token)
                 s.phase="walking-cancel"
                 s.cancelAt=tick()
                 s.walkSince=tick()
+                s.lastMovingAt=tick()
                 local native,detail=stopMatchingTrack()
                 s.lastStopMethod=detail
                 if native then
@@ -301,13 +302,17 @@ local function run(token)
                     .."s before the original idle IDs are restored.")
             end
         elseif s.phase=="walking-cancel" then
-            if not moving then
+            if moving then s.lastMovingAt=tick() end
+            if not moving and s.lastMovingAt and tick()-s.lastMovingAt>=0.22 then
                 s.walkDropCount=s.walkDropCount+1
                 s.phase="await-stop"
                 s.walkSince=nil
+                s.lastMovingAt=nil
                 log("Walking ended before sustained stop confirmation. Original ID remains staged.")
                 log("Walk again for "..tostring(s.cancelHold).."s continuously or use .Restore().")
-            elseif s.walkSince and tick()-s.walkSince>=s.cancelHold then
+            elseif s.walkSince and s.lastMovingAt
+                and tick()-s.walkSince>=s.cancelHold
+                and tick()-s.lastMovingAt<0.22 then
                 log("Sustained movement confirmed before restoring original IDs.")
                 cleanup("confirmed sustained walking stop")
                 return
@@ -356,7 +361,7 @@ function P.Play(value)
     s.active=true;s.phase="await-walk";s.clip=id;s.char=char
     s.token=s.token+1;s.startAt=tick();s.last="Starting emote"
     s.sawMotion=false;s.lastReadback="0/0"
-    s.walkSince=nil;s.walkDropCount=0;s.nativeStopCount=0
+    s.walkSince=nil;s.lastMovingAt=nil;s.walkDropCount=0;s.nativeStopCount=0
     s.lastStopMethod="Not attempted"
     local token=s.token
     if s.mode=="pulse" then
