@@ -1682,11 +1682,16 @@ local function renderEmotes(x,y,w,h)
         local reported=UI.emoteTestResult
         if emoteEngine and type(emoteEngine.Status)=="function" then
             local ok,info=pcall(emoteEngine.Status)
-            if ok and type(info)=="table" and info.lastAssetId and info.active then
-                reported="Track requested: "..tostring(info.lastAssetId).." (visual playback unverified)"
+            if ok and type(info)=="table" and info.lastAssetId then
+                if info.active then
+                    reported="Track requested: "..tostring(info.lastAssetId).." (visual playback unverified)"
+                elseif info.detail then
+                    reported=tostring(info.detail)
+                end
             end
         end
         txt(fit(reported,w-175,FS-2),x+110,ty+186,FS-2,TH.text,15)
+        reg(x+104,ty+171,w-122,28,"emoteTestStatus",nil,reported)
         txt("If this is an emote catalog item ID, we may need its underlying clip ID.",
             x+3,ty+241,FS-2,TH.mute,15)
         return
