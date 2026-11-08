@@ -243,7 +243,7 @@ end
 local function autoStart(token)
     local ok,why=keyDown()
     if not ok then return false,why end
-    local first=tick(),0
+    local first=tick()
     local physical=false
     local stageIssued=false
     local readyAt=nil
