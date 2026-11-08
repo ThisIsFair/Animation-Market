@@ -274,7 +274,21 @@ local function startRunner(token)
     else
         s.last="Automatic physical microstep detected; waiting for return to idle"
     end
-    task.wait(0.26)
+    -- Wait for our own injected movement to decay before enabling the
+    -- "manual movement stops emote" monitor. Otherwise the startup pulse
+    -- might be mistaken for a user trying to cancel the emote.
+    local settleStart=tick()
+    local quietSince=nil
+    while s.active and s.token==token and tick()-settleStart<1.6 do
+        task.wait(0.055)
+        local moving=motion(s.character)
+        if moving then
+            quietSince=nil
+        else
+            quietSince=quietSince or tick()
+            if tick()-quietSince>=0.18 then break end
+        end
+    end
     if not s.active or s.token~=token then return end
     s.phase="playing";s.started=tick()
     log("PLAY PHASE: if animation started, it should be visible to other players.")
