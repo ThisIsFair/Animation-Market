@@ -396,4 +396,4 @@ end
 
 _G.StanceEmoteV5=P
 log("VERSION "..VERSION.." loaded. Use .Report() then .Arm('118644064755644').")
-log("All player identifiers are supplied at runtime; no username is embedded.")
+log("No usernames or account IDs are embedded. This is a single-character local test.")
