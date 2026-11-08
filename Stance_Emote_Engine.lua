@@ -172,6 +172,7 @@ function Emotes.PlayId(value)
         end
         track,method=loadedTrack,"Animator:LoadAnimation"
     end
+    Emotes.Stop()
     pcall(function() track.Priority=Enum.AnimationPriority.Action end)
     local started,startReason=pcall(function() track:Play(0.1) end)
     if not started then
@@ -180,13 +181,27 @@ function Emotes.PlayId(value)
         lastError="AnimationTrack:Play unavailable or rejected: "..tostring(startReason)
         return false,lastError
     end
-    Emotes.Stop()
     directTrack,directClip=track,clip
     lastAssetId,lastName,lastMethod,lastError=id,"Cute Wave (asset test)",method,nil
     lastDetail="Play request sent; visual playback/replication not verified"
     local token=directToken
     running=false
     task.spawn(function()
+        local handles={}
+        local function monitor(signal,kind)
+            pcall(function()
+                local conn=signal:Connect(function(value)
+                    if directToken~=token then return end
+                    if kind=="speed" and type(value)=="number" and value<1 then return end
+                    if kind=="jump" and value~=true then return end
+                    Emotes.Stop()
+                    lastDetail="Movement event detected; emote stopped"
+                end)
+                handles[#handles+1]=conn
+            end)
+        end
+        pcall(function() monitor(humanoid.Running,"speed") end)
+        pcall(function() monitor(humanoid.Jumping,"jump") end)
         local begun=tick()
         while directToken==token and directTrack==track do
             task.wait(0.13)
@@ -217,6 +232,7 @@ function Emotes.PlayId(value)
                 end
             end
         end
+        for _,conn in ipairs(handles) do pcall(function() conn:Disconnect() end) end
     end)
     return true,"Play request sent for "..id.."; check whether it moves your character"
 end
