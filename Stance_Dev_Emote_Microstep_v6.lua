@@ -268,12 +268,12 @@ local function startRunner(token)
         task.wait(0.10)
     end
     if not didMove then
-        log("No real locomotion detected after small inputs.")
-        log("Fallback: manually TAP movement briefly, then stand still; playback may start.")
-        s.last="Automatic movement unconfirmed; manual tiny movement may be needed"
-    else
-        s.last="Automatic physical microstep detected; waiting for return to idle"
+        log("No real locomotion detected after either short input.")
+        log("Automatic emote trigger cannot be verified; restoring idle IDs instead of leaving a repeating emote.")
+        cleanup("microstep unable to trigger locomotion")
+        return
     end
+    s.last="Automatic physical microstep detected; waiting for return to idle"
     -- Wait for our own injected movement to decay before enabling the
     -- "manual movement stops emote" monitor. Otherwise the startup pulse
     -- might be mistaken for a user trying to cancel the emote.
