@@ -1663,6 +1663,17 @@ local function stopEmoteId()
         toast(UI.emoteTestResult,"warn")
     end
 end
+local function inspectStanceEmotes()
+    if not UI.emoteEngine or type(UI.emoteEngine.Inspect)~="function" then
+        UI.emoteTestResult="Inspection unavailable; reload the latest Dev script"
+        toast(UI.emoteTestResult,"warn")
+        return
+    end
+    local ok,success,reason=pcall(UI.emoteEngine.Inspect)
+    UI.emoteTestResult=tostring(ok and reason or success)
+    toast(ok and success and "Emote probe printed to Matcha console"
+        or "Emote probe failed; see status",ok and success and "info" or "warn")
+end
 UI.renderEmotes = function(x,y,w,h)
     txt("ROBLOX EMOTES - DEV",x+2,y+16,FS-1,TH.text,14,false,true)
     segmented(x+w-224,y,224,30,{{"test","Test ID"},{"standard","Standard"}},
@@ -1681,6 +1692,9 @@ UI.renderEmotes = function(x,y,w,h)
             "Test playback using an existing Animation template; may be unsupported in Matcha")
         button(x+144,ty+136,95,34,"Stop","emoteStopId",stopEmoteId,"soft",20,
             "Stop only the custom Stance emote track")
+        button(x+248,ty+136,120,34,"Inspect rig","emoteInspect",
+            inspectStanceEmotes,"soft",20,
+            "Read-only check of Animate emote folders and supported methods")
         txt("TEST STATUS",x+18,ty+186,FS-3,TH.sub,15,false,true)
         local reported=UI.emoteTestResult
         if UI.emoteEngine and type(UI.emoteEngine.Status)=="function" then
