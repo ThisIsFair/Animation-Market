@@ -325,7 +325,15 @@ function P.Play(value, maxSeconds)
     log("Expected: start once, restore original idle IDs automatically, cancel on movement")
     log("Safety timeout: " .. tostring(duration) .. " seconds; manual .Stop() available")
     local token = state.token
-    task.spawn(function() monitor(token) end)
+    task.spawn(function()
+        local ok, err = pcall(function() monitor(token) end)
+        if not ok then
+            log("Monitor error: " .. tostring(err) .. "; attempting to restore original idle slots")
+            if state.active and state.token == token then
+                stopInternal("monitor error")
+            end
+        end
+    end)
     return true, "One-shot emote experiment started; visual and server replication UNVERIFIED"
 end
 
