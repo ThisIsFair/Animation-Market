@@ -44,3 +44,15 @@ An actual catalog of arbitrary Roblox Marketplace emotes and unrestricted playba
 The changed Lua source passed static delimiter/block checks. It has **not** been run inside a live Roblox/Matcha session.
 
 Reference: Roblox support's `/e` commands and Roblox Creator Hub's character emote API documentation.
+
+## Marketplace / UGC one-shot lifecycle experiment (2026-11-07)
+
+Live R15 testing confirmed that swapping both idle AnimationId references to underlying UGC animation clip `118644064755644` resulted in **local visual playback** and memory readback **2/2**. Restoring the original references succeeded (2/2). **Replication to another player is not yet confirmed.**
+
+The permanent idle substitution replayed the emote every time the character returned to idle. A new standalone Dev-only experiment, `Stance_Dev_Emote_OneShot_v3.lua`, changes this lifecycle: after 2/2 readback and a short startup grace period, it restores original idle references without forcing an immediate animation refresh. A movement/jump event triggers a guarded refresh to cancel the currently playing animation. Manual Stop, a safety timeout, and respawn abandonment are also included.
+
+`Stance_Animation_Engine.lua` now exposes optional `RestoreNoRefresh`, `RefreshOneShot`, and `AbandonOneShotOnRespawn` methods. The normal `Restore()` behavior remains unchanged.
+
+Execute the new Dev script via `loadstring(httpget('https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Dev_Emote_OneShot_v3.lua'))()`. Call `_G.StanceOneShotEmote.Report()`, `_G.StanceOneShotEmote.Play('118644064755644')`, then move/jump and call `_G.StanceOneShotEmote.Check()`. `_G.StanceOneShotEmote.Stop()` cancels manually and `.Unload()` cleans up.
+
+**Unverified:** No live Matcha v3 test, clean track stop, or server replication has been demonstrated. Roblox may cache already loaded animation tracks; restoration does not guarantee interruption or non-replay in all experiences. Test in a disposable R15 session and verify visually with a second player. Raw memory writes depend on validated Roblox offsets and can crash the client.
