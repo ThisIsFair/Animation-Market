@@ -319,6 +319,8 @@ local UI = {
     caches = {}, favVer = 0, recentVer = 0, blackVer = 0,
     codeInput = "", codeOpen = false,
     emoteSearch = "", emoteFilter = "all", emoteBusy = false,
+    emoteView = "test", emoteTestId = "85402831040149",
+    emoteTestResult = "Ready to test Cute Wave with the R15 Animator.",
     W = 740, H = 540, W0 = 740,
     binding = nil, bindGuard = 0,
 }
@@ -1626,9 +1628,71 @@ local function playStanceEmote(name)
         end
     end)
 end
+local function tryEmoteId()
+    if UI.emoteBusy then return end
+    if not emoteEngine or type(emoteEngine.PlayId)~="function" then
+        UI.emoteTestResult="Emote module missing PlayId; reload StanceDev."
+        toast(UI.emoteTestResult,"bad")
+        return
+    end
+    UI.emoteBusy=true
+    local requested=UI.emoteTestId
+    task.spawn(function()
+        local ok,success,detail=pcall(emoteEngine.PlayId,requested)
+        UI.emoteBusy=false
+        UI.emoteTestResult=tostring(ok and detail or success)
+        if ok and success then
+            toast("Custom emote request sent (check visually)","info")
+            UI.visible=false
+            syncInput(true)
+        else
+            toast("Emote test failed; check Test status","warn")
+        end
+    end)
+end
+local function stopEmoteId()
+    if emoteEngine and type(emoteEngine.Stop)=="function" then
+        local ok,stopped,reason=pcall(emoteEngine.Stop)
+        UI.emoteTestResult=tostring(ok and reason or stopped)
+        toast(UI.emoteTestResult,"info")
+    else
+        UI.emoteTestResult="No custom emote adapter loaded"
+        toast(UI.emoteTestResult,"warn")
+    end
+end
 local function renderEmotes(x,y,w,h)
-    txt("ROBLOX EMOTES",x+2,y+16,FS-1,TH.text,14,false,true)
-    button(x+w-174,y,174,30,State.emoteChatFallback and "Chat fallback: ON" or "Chat fallback: OFF",
+    txt("ROBLOX EMOTES - DEV",x+2,y+16,FS-1,TH.text,14,false,true)
+    segmented(x+w-224,y,224,30,{{"test","Test ID"},{"standard","Standard"}},
+        UI.emoteView,function(v) UI.emoteView=v;blur() end,20,"emoteView")
+    if UI.emoteView=="test" then
+        local ty=y+46
+        card(x,ty,w,215,22,12)
+        txt("Cute Wave / arbitrary ID test",x+18,ty+28,FS+2,TH.text,15,false,true)
+        txt("Uses a copied Animation and Animator:LoadAnimation. Does not change your movement packs.",
+            x+18,ty+50,FS-3,TH.mute,15)
+        txt("ANIMATION ASSET ID",x+18,ty+77,FS-3,TH.sub,15)
+        input(x+18,ty+89,w-36,34,UI,"emoteTestId","emoteAssetId","85402831040149",20)
+        button(x+18,ty+136,115,34,UI.emoteBusy and "Working..." or "Play test",
+            "emotePlayId",not UI.emoteBusy and tryEmoteId or nil,
+            UI.emoteBusy and "disabled" or "primary",20,
+            "Test playback using an existing Animation template; may be unsupported in Matcha")
+        button(x+144,ty+136,95,34,"Stop","emoteStopId",stopEmoteId,"soft",20,
+            "Stop only the custom Stance emote track")
+        txt("TEST STATUS",x+18,ty+186,FS-3,TH.sub,15,false,true)
+        local reported=UI.emoteTestResult
+        if emoteEngine and type(emoteEngine.Status)=="function" then
+            local ok,info=pcall(emoteEngine.Status)
+            if ok and type(info)=="table" and info.lastAssetId and info.active then
+                reported="Track requested: "..tostring(info.lastAssetId).." (visual playback unverified)"
+            end
+        end
+        txt(fit(reported,w-175,FS-2),x+110,ty+186,FS-2,TH.text,15)
+        txt("If this is an emote catalog item ID, we may need its underlying clip ID.",
+            x+3,ty+241,FS-2,TH.mute,15)
+        return
+    end
+    txt("Standard /e commands",x+2,y+55,FS-2,TH.sub,14)
+    button(x+w-174,y+40,174,30,State.emoteChatFallback and "Chat fallback: ON" or "Chat fallback: OFF",
         "emoteFallback",function()
             State.emoteChatFallback=not State.emoteChatFallback
             markDirty()
@@ -1636,8 +1700,8 @@ local function renderEmotes(x,y,w,h)
                 or "Chat input disabled; native method only","info")
         end,State.emoteChatFallback and "accent" or "soft",20,
         "Opt-in keyboard typing of /e commands when direct Roblox emote calls are unavailable")
-    input(x,y+38,w-180,30,UI,"emoteSearch","emoteSearchBox","Search emotes",20)
-    segmented(x+w-170,y+38,170,30,{{"all","All"},{"saved","Saved"}},
+    input(x,y+78,w-180,30,UI,"emoteSearch","emoteSearchBox","Search emotes",20)
+    segmented(x+w-170,y+78,170,30,{{"all","All"},{"saved","Saved"}},
         UI.emoteFilter,function(v) UI.emoteFilter=v end,20,"emoteFilter")
     local list={}
     local search=UI.emoteSearch:lower()
@@ -1654,7 +1718,7 @@ local function renderEmotes(x,y,w,h)
         local col=(i-1)%2
         local row=math.floor((i-1)/2)
         local rx=x+col*(cellW+gap)
-        local ry=y+80+row*(rowH+gap)
+        local ry=y+118+row*(rowH+gap)
         if ry+rowH<=y+h+2 then
             card(rx,ry,cellW,rowH,13,12,nil,TH.ctl)
             txt(fit(emote[2],cellW-164,FS),rx+12,ry+18,FS,TH.text,15,false,true)
@@ -1673,7 +1737,7 @@ local function renderEmotes(x,y,w,h)
         end
     end
     if #list==0 then
-        emptyState(x,y+80,w,h-80,"No emotes found",
+        emptyState(x,y+118,w,h-118,"No emotes found",
             UI.emoteFilter=="saved" and "Save one from All to see it here." or "Try another search.")
     end
 end
@@ -1689,7 +1753,7 @@ local PAGE_SUB = {
     Favorites = "Your saved packs, one click away.",
     MixMatch = "Mix and match animations for each movement state.",
     Presets = "Save a mix and switch back to it any time.",
-    Emotes = "Try owned Roblox emotes. Move to cancel; /e copies the chat command.",
+    Emotes = "Test asset-ID playback or use standard /e commands.",
     Controls = "Hotkeys, the swap wheel and respawn behavior.",
     Appearance = "Theme, text size and layout.",
 }
