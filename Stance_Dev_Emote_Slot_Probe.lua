@@ -6,7 +6,7 @@
 -- IMPORTANT: Changing an idle clip is NOT equivalent to triggering
 -- a native Marketplace emote. Another Roblox client must verify visibility.
 --
--- 1. Launch StanceDev.lua in Matcha.
+-- 1. No Stance UI required: engine auto-initializes on first diagnostic or test.
 -- 2. Run: loadstring(httpget("https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Dev_Emote_Slot_Probe.lua"))()
 -- 3. _G.StanceDevEmoteSlotProbe.Report()
 -- 4. _G.StanceDevEmoteSlotProbe.Try("118644064755644")
@@ -25,7 +25,8 @@ end
 
 local Probe = {}
 local PREFIX = "[Stance/DevEmoteSlot] "
-local state = { active = false, id = nil }
+local state = { active = false, id = nil, ownedEngine = nil, initAttempted = false, initError = nil }
+local ENGINE_URL = "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Animation_Engine.lua"
 local function say(message)
     print(PREFIX .. tostring(message))
 end
@@ -33,14 +34,52 @@ local function deny(message)
     say("BLOCKED: " .. tostring(message))
     return false, tostring(message)
 end
+local function usableEngine(engine)
+    return type(engine) == "table"
+        and type(engine.ApplyStateIds) == "function"
+        and type(engine.Status) == "function"
+        and type(engine.Restore) == "function"
+end
+
+-- Load only the existing Dev animation engine, not the Stance UI.
+-- Merely initializing the engine does not queue an animation-memory write.
 local function getEngine()
     local engine = _G.StanceAnimationEngine
-    if type(engine) ~= "table"
-        or type(engine.ApplyStateIds) ~= "function"
-        or type(engine.Status) ~= "function"
-        or type(engine.Restore) ~= "function" then
-        return nil, "Stance Dev engine missing. Run StanceDev.lua first."
+    if usableEngine(engine) then return engine end
+    if state.initAttempted then
+        return nil, state.initError or "Dev animation engine did not initialize"
     end
+    state.initAttempted = true
+
+    if type(httpget) ~= "function" or type(loadstring) ~= "function" then
+        state.initError = "Matcha httpget/loadstring unavailable; cannot initialize Dev engine"
+        return nil, state.initError
+    end
+    say("Dev animation engine not found; initializing from GitHub (no UI needed)")
+    local got, source = pcall(function() return httpget(ENGINE_URL) end)
+    if not got or type(source) ~= "string" or #source < 20000 or #source > 500000 then
+        state.initError = "Engine download failed or returned an invalid response"
+        return nil, state.initError
+    end
+    if not source:match("^local STANCE_RELEASE") then
+        state.initError = "Downloaded text does not look like the Dev animation engine"
+        return nil, state.initError
+    end
+    local compiled, fn = pcall(function() return loadstring(source) end)
+    if not compiled or type(fn) ~= "function" then
+        state.initError = "Matcha failed to compile the Dev animation engine"
+        return nil, state.initError
+    end
+    local launched, launchError = pcall(function() fn() end)
+    engine = _G.StanceAnimationEngine
+    if not launched or not usableEngine(engine) then
+        state.initError = "Dev engine failed to initialize: "
+            .. (not launched and tostring(launchError) or "engine API missing after execution")
+        return nil, state.initError
+    end
+    state.ownedEngine = engine
+    state.initError = nil
+    say("Dev animation engine initialized; available methods checked")
     return engine
 end
 local function readStatus(engine)
@@ -151,6 +190,13 @@ function Probe.Unload()
             return deny("Restore failed; keeping probe loaded so you can retry: " .. tostring(detail))
         end
     end
+    -- Do not unload an engine that was already running for the Stance UI.
+    if state.ownedEngine and _G.StanceAnimationEngine == state.ownedEngine
+        and type(_G.StanceEngineUnload) == "function" then
+        local unloaded = pcall(_G.StanceEngineUnload)
+        if not unloaded then return deny("Dev engine cleanup failed") end
+    end
+    state.ownedEngine = nil
     if _G.StanceDevEmoteSlotProbe == Probe then
         _G.StanceDevEmoteSlotProbe = nil
     end
@@ -158,6 +204,15 @@ function Probe.Unload()
     return true
 end
 
+function Probe.RetryInit()
+    if state.active then return deny("Restore the current test first") end
+    state.initAttempted = false
+    state.initError = nil
+    local engine, reason = getEngine()
+    if not engine then return deny(reason) end
+    return true, "Engine initialized"
+end
+
 _G.StanceDevEmoteSlotProbe = Probe
-say("Loaded from Dev. Use _G.StanceDevEmoteSlotProbe.Report()")
+say("Loaded from Dev (standalone). Use _G.StanceDevEmoteSlotProbe.Report()")
 say("Try('118644064755644') to test a provided UGC clip candidate.")
