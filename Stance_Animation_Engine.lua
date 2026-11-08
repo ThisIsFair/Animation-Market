@@ -1167,6 +1167,9 @@ end
 local stanceOriginals = {}
 local stanceEngineAlive = true
 local autoReapplyEnabled = true
+-- Optional emote-test staging. Regular Stance animation writes still use
+-- the original PlatformStand refresh unless explicitly queued as quiet.
+local emoteQuietWriteMode = false
 local function applyActiveAnimations(explicit)
     if applyBusy or not next(activeSpoofs) then return end
     if not explicit and not autoReapplyEnabled and appliedCharacterAddress then
@@ -1230,7 +1233,7 @@ local function applyActiveAnimations(explicit)
             assert(false,"PlatformStand value invalid; refusing pulse")
         end
 
-        if originalPS==0 then
+        if originalPS==0 and not emoteQuietWriteMode then
             memory_write("byte",hum.Address+PLATFORMSTAND_OFFSET,1)
             pulseStarted=true
             task.wait(0.16)
@@ -1834,13 +1837,16 @@ local function stanceCopy(selection)
 end
 local function stanceRestoreTracked(skipRefresh)
     local previous = stanceCopy(activeSpoofs)
+    local previousQuiet = emoteQuietWriteMode
     activeSpoofs = {}
+    emoteQuietWriteMode = false
     activeWriteStamp = {}
     retryAfter = {}
     retryCounts = {}
     local can, reason = capability()
     if not can then
         activeSpoofs = previous
+        emoteQuietWriteMode = previousQuiet
         return false, reason
     end
     local player = game:GetService("Players").LocalPlayer
@@ -1877,7 +1883,7 @@ local function stanceRestoreTracked(skipRefresh)
     end
     return true, "Restored " .. tostring(restored) .. " animation references"
 end
-local function stanceApplyIds(idsByState)
+local function stanceApplyIds(idsByState, quietWrite)
     local can, reason = capability()
     if not can then return false, reason end
     if type(idsByState) ~= "table" then return false, "No animation state map supplied" end
@@ -1908,6 +1914,7 @@ local function stanceApplyIds(idsByState)
         end
     end
     activeSpoofs = staged
+    emoteQuietWriteMode = quietWrite == true
     activeWriteStamp = {}
     retryAfter = {}
     retryCounts = {}
@@ -1916,6 +1923,11 @@ local function stanceApplyIds(idsByState)
 end
 StanceEngine.ApplyStateIds = function(ids)
     return stanceApplyIds(ids)
+end
+-- Quiet write for the Dev emote test ONLY. Does not pulse PlatformStand,
+-- so a natural movement-to-idle transition must load the animation.
+StanceEngine.StageQuietIds = function(ids)
+    return stanceApplyIds(ids, true)
 end
 StanceEngine.ApplyRows = function(rows)
     return stanceApplyIds(MarketCore.group(rows))
@@ -1929,36 +1941,11 @@ StanceEngine.RestoreNoRefresh = function()
     if applyBusy then return false, "Animation writes are in progress; retry shortly" end
     return stanceRestoreTracked(true)
 end
--- Request the same guarded PlatformStand refresh used by the Dev engine.
--- Only call on deliberate emote cancel/movement, NOT during emote playback.
-StanceEngine.RefreshOneShot = function()
-    if applyBusy then return false, "Animation writes are in progress" end
-    local can, why = capability()
-    if not can then return false, why end
-    local player = game:GetService("Players").LocalPlayer
-    local character = player and player.Character
-    local hum = character and character:FindFirstChild("Humanoid")
-    if not hum or type(hum.Address) ~= "number" or not PLATFORMSTAND_OFFSET then
-        return false, "Humanoid/PlatformStand unavailable"
-    end
-    local address = hum.Address + PLATFORMSTAND_OFFSET
-    local ok, reason = pcall(function()
-        local original = memory_read("byte", address)
-        assert(original == 0 or original == 1, "PlatformStand value failed validation")
-        if original == 0 then
-            memory_write("byte", address, 1)
-            task.wait(0.12)
-            memory_write("byte", address, original)
-            assert(memory_read("byte", address) == original, "PlatformStand restore verification failed")
-        end
-    end)
-    if not ok then return false, tostring(reason) end
-    return true, "Animation refresh pulse completed"
-end
 -- When the character respawns during a one-shot test, do not allow the
 -- old idle-ID selection to be applied to the newly spawned character.
 StanceEngine.AbandonOneShotOnRespawn = function()
     activeSpoofs = {}
+    emoteQuietWriteMode = false
     activeWriteStamp = {}
     retryAfter = {}
     retryCounts = {}
