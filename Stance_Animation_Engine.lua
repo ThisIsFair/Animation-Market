@@ -1955,6 +1955,15 @@ StanceEngine.RefreshOneShot = function()
     if not ok then return false, tostring(reason) end
     return true, "Animation refresh pulse completed"
 end
+-- When the character respawns during a one-shot test, do not allow the
+-- old idle-ID selection to be applied to the newly spawned character.
+StanceEngine.AbandonOneShotOnRespawn = function()
+    activeSpoofs = {}
+    activeWriteStamp = {}
+    retryAfter = {}
+    retryCounts = {}
+    return true, "Cleared emote test selection after character change"
+end
 StanceEngine.Library = function()
     return market.ordered
 end
