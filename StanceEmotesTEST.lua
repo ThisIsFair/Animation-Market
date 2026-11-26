@@ -20,7 +20,7 @@
 -- No /e, Matcha Pro, script deobfuscation, or teleportation is involved.
 -- A client-local reset does not prove the peer's track stopped.
 
-local VERSION = "20261107-quickpulse-3-stopguard"
+local VERSION = "20261126-emote-fix-2"
 local TAG = "[StanceEmotesTEST] "
 local ENGINE_URL =
     "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Animation_Engine.lua?emotest=quickpulse-67a312"
@@ -128,6 +128,15 @@ local function moveKeyHeld()
         if ok and down==true then return true end
     end
     return false
+end
+local function rootSpeed()
+    local char=currentChar()
+    local root=char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return 0 end
+    local ok,v=pcall(function() return root.AssemblyLinearVelocity end)
+    if not ok or not v then return 0 end
+    local okm,mag=pcall(function() return math.sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z) end)
+    return okm and type(mag)=="number" and mag or 0
 end
 local function isMoving(char)
     if not char then return false end
@@ -314,8 +323,24 @@ local function run(token)
                     return
                 end
                 if reason=="keyboard" then
-                    log("Movement key pressed; restoring original idle IDs now.")
-                    cleanup("movement key")
+                    -- A key press does not prove Animate left idle (wall, lag, chat).
+                    -- Give it a moment; if the character is still standing, restore
+                    -- WITH the refresh so Animate reloads idle and replaces the emote.
+                    log("Movement key pressed; checking the character really moved...")
+                    task.wait(0.3)
+                    if not s.active or s.token~=token then return end
+                    if currentChar()~=s.char then cleanup("respawn");return end
+                    if rootSpeed()>1.5 then
+                        cleanup("movement key")
+                    else
+                        local okR=invoke(function() return s.engine.Restore() end)
+                        if okR then
+                            s.token=s.token+1
+                            finish("Key pressed but character stood still; idle reloaded with the original animation.")
+                        else
+                            cleanup("movement key")
+                        end
+                    end
                     return
                 end
                 log("Movement detected; no direct track stop available ("..tostring(detail)..").")
@@ -363,11 +388,21 @@ function P.Report()
 end
 
 function P.Play(value)
-    if s.active then return deny("An emote is already active; use .Stop() or .Restore() first") end
     local id=validId(value)
     if not id then return deny("Enter a valid underlying animation CLIP ID") end
     local e,why=getEngine()
     if not e then return deny(why) end
+    if s.active then
+        -- Replay / switch: put the original IDs back first, otherwise staging the
+        -- same clip again changes nothing and no refresh pulse happens.
+        if s.phase~="playing" and s.phase~="await-stop" and s.phase~="walking-cancel" then
+            return deny("Previous emote is still starting; try again in a second")
+        end
+        local okR,detailR=restoreOriginals()
+        if not okR then return deny("Could not reset for replay: "..tostring(detailR)) end
+        s.token=s.token+1
+        finish("Reset for replay")
+    end
     local r=status(e)
     if not r or r.available~=true or r.rig~="R15" then
         return deny(r and r.reason or "R15 or memory capability unavailable")
