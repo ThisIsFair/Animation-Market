@@ -103,9 +103,6 @@ local function legacyStop()
 end
 Emotes.Stop=legacyStop
 
--- Idle-slot emote player (StanceEmotesTEST). Animator:LoadAnimation is not
--- exposed by Matcha, so custom IDs are played by swapping the idle clip the
--- real Animate script loads, which is also what other players see.
 local TEST_URL="https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/StanceEmotesTEST.lua"
 local function idleSlot()
     local t=_G.StanceEmotesTEST
@@ -168,7 +165,7 @@ local function findClipTemplate(character)
     return nil
 end
 
-function Emotes.PlayIdAnimator(value) -- legacy Animator path, unused by the UI
+function Emotes.PlayIdAnimator(value)
     if running then return false,"Another emote request is already running" end
     local id=tostring(value or ""):match("^%s*(%d+)%s*$")
     if not id or #id<6 or #id>17 then
@@ -291,8 +288,6 @@ function Emotes.PlayIdAnimator(value) -- legacy Animator path, unused by the UI
     return true,"Play request sent for "..id.."; check whether it moves your character"
 end
 
-
--- Read-only capability check. This NEVER writes to Roblox memory or sends a chat message.
 function Emotes.Inspect()
     local character,humanoid,reason=characterStatus()
     if not humanoid then return false,reason end
