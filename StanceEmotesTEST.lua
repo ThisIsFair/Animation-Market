@@ -1,26 +1,4 @@
--- StanceEmotesTEST.lua (Dev only)
--- Single UGC/Marketplace CLIP animation test. No Roblox username or account ID.
--- Tested previously: an idle slot change can play an emote locally and on peers.
--- Prior normal start refresh causes a visible dip into the ground.
--- This version tries a SHORTER PlatformStand pulse for auto start.
--- Live behavior of short pulse and replicated STOP must be verified.
---
--- Load: loadstring(httpget("https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/StanceEmotesTEST.lua"))()
--- Play: _G.StanceEmotesTEST.Play("118644064755644")
--- Cancel: walk normally ~1-2 seconds, or use .Stop() to request a walk
--- Status: _G.StanceEmotesTEST.Check()
--- Emergency restore: _G.StanceEmotesTEST.Restore()
--- Manual fallback: _G.StanceEmotesTEST.SetMode("walk")
--- Return to short pulse mode: _G.StanceEmotesTEST.SetMode("pulse")
--- Tune pulse: _G.StanceEmotesTEST.SetPulse(0.03,0.025)
---
--- WARNING: This requires version-checked low-level animation ID and
--- PlatformStand memory writes. If your character behaves abnormally,
--- call .Restore() or rejoin Roblox. Use in a disposable R15 test session.
--- No /e, Matcha Pro, script deobfuscation, or teleportation is involved.
--- A client-local reset does not prove the peer's track stopped.
-
-local VERSION = "20261107-quickpulse-3-stopguard"
+local VERSION = "20261126-emote-fix-3"
 local TAG = "[StanceEmotesTEST] "
 local ENGINE_URL =
     "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Animation_Engine.lua?emotest=quickpulse-67a312"
@@ -45,7 +23,7 @@ local P = {Version = VERSION}
 local s = {
     engine=nil, ownsEngine=false, attempted=false, engineError=nil,
     active=false, phase="idle", token=0, clip=nil, char=nil,
-    mode="pulse", before=0.03, after=0.025,
+    mode="pulse", before=0.10, after=0.08,
     startAt=0, stageAt=0, armedAt=0, last="Not started",
     cancelAt=0, expiry=35, retryAfter=0,
     cancelHold=0.15, walkSince=nil, lastMovingAt=nil, walkDropCount=0,
@@ -114,9 +92,8 @@ local function validId(value)
     if not id or #id<6 or #id>17 then return nil end
     return id
 end
--- Live key state is documented Matcha API (iskeypressed) and reacts instantly,
--- unlike Humanoid.MoveDirection (undocumented) or root velocity (lags).
-local MOVE_KEYS={0x57,0x41,0x53,0x44,0x25,0x26,0x27,0x28,0x20} -- WASD, arrows, Space
+
+local MOVE_KEYS={0x57,0x41,0x53,0x44,0x25,0x26,0x27,0x28,0x20}
 local function moveKeyHeld()
     if type(iskeypressed)~="function" then return false end
     if type(isrbxactive)=="function" then
@@ -128,6 +105,15 @@ local function moveKeyHeld()
         if ok and down==true then return true end
     end
     return false
+end
+local function rootSpeed()
+    local char=currentChar()
+    local root=char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return 0 end
+    local ok,v=pcall(function() return root.AssemblyLinearVelocity end)
+    if not ok or not v then return 0 end
+    local okm,mag=pcall(function() return math.sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z) end)
+    return okm and type(mag)=="number" and mag or 0
 end
 local function isMoving(char)
     if not char then return false end
@@ -155,9 +141,6 @@ local function isMoving(char)
     return false,"no movement"
 end
 
--- Matcha may not expose Animator or AnimationTrack methods. Never stop
--- unrelated movement tracks: match only the active requested clip ID.
--- This is the documented Roblox track-stop path if the VM exposes it.
 local function stopMatchingTrack()
     local char=currentChar()
     local humanoid=char and char:FindFirstChild("Humanoid")
@@ -314,8 +297,22 @@ local function run(token)
                     return
                 end
                 if reason=="keyboard" then
-                    log("Movement key pressed; restoring original idle IDs now.")
-                    cleanup("movement key")
+
+                    log("Movement key pressed; checking the character really moved...")
+                    task.wait(0.3)
+                    if not s.active or s.token~=token then return end
+                    if currentChar()~=s.char then cleanup("respawn");return end
+                    if rootSpeed()>1.5 then
+                        cleanup("movement key")
+                    else
+                        local okR=invoke(function() return s.engine.Restore() end)
+                        if okR then
+                            s.token=s.token+1
+                            finish("Key pressed but character stood still; idle reloaded with the original animation.")
+                        else
+                            cleanup("movement key")
+                        end
+                    end
                     return
                 end
                 log("Movement detected; no direct track stop available ("..tostring(detail)..").")
@@ -363,11 +360,20 @@ function P.Report()
 end
 
 function P.Play(value)
-    if s.active then return deny("An emote is already active; use .Stop() or .Restore() first") end
     local id=validId(value)
     if not id then return deny("Enter a valid underlying animation CLIP ID") end
     local e,why=getEngine()
     if not e then return deny(why) end
+    if s.active then
+
+        if s.phase~="playing" and s.phase~="await-stop" and s.phase~="walking-cancel" then
+            return deny("Previous emote is still starting; try again in a second")
+        end
+        local okR,detailR=restoreOriginals()
+        if not okR then return deny("Could not reset for replay: "..tostring(detailR)) end
+        s.token=s.token+1
+        finish("Reset for replay")
+    end
     local r=status(e)
     if not r or r.available~=true or r.rig~="R15" then
         return deny(r and r.reason or "R15 or memory capability unavailable")
@@ -424,8 +430,7 @@ function P.Stop()
         end
         log("No native stop available: "..tostring(detail))
         if currentChar()~=s.char then return cleanup("respawn") end
-        -- Restore the original IDs WITH the PlatformStand refresh so Animate
-        -- reloads idle and replaces the emote track (this is what peers see).
+
         local ok,why=invoke(function() return s.engine.Restore() end)
         if not ok then return deny("Stop failed: "..tostring(why)) end
         s.token=s.token+1
