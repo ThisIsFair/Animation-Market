@@ -20,7 +20,7 @@
 -- No /e, Matcha Pro, script deobfuscation, or teleportation is involved.
 -- A client-local reset does not prove the peer's track stopped.
 
-local VERSION = "20261126-emote-fix-2"
+local VERSION = "20261126-emote-fix-3"
 local TAG = "[StanceEmotesTEST] "
 local ENGINE_URL =
     "https://raw.githubusercontent.com/ThisIsFair/Animation-Market/Dev/Stance_Animation_Engine.lua?emotest=quickpulse-67a312"
@@ -45,7 +45,7 @@ local P = {Version = VERSION}
 local s = {
     engine=nil, ownsEngine=false, attempted=false, engineError=nil,
     active=false, phase="idle", token=0, clip=nil, char=nil,
-    mode="pulse", before=0.03, after=0.025,
+    mode="pulse", before=0.10, after=0.08,
     startAt=0, stageAt=0, armedAt=0, last="Not started",
     cancelAt=0, expiry=35, retryAfter=0,
     cancelHold=0.15, walkSince=nil, lastMovingAt=nil, walkDropCount=0,
